@@ -2,8 +2,41 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { GRADIENTS } from "@/lib/characters";
+
+async function fileToDataUrl(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = reject;
+      el.src = url;
+    });
+    const size = 512;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d")!;
+    // 정사각형 중앙 크롭 후 512px로 리사이즈
+    const sw = Math.min(img.width, img.height);
+    ctx.drawImage(
+      img,
+      (img.width - sw) / 2,
+      (img.height - sw) / 2,
+      sw,
+      sw,
+      0,
+      0,
+      size,
+      size
+    );
+    return canvas.toDataURL("image/jpeg", 0.85);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 const EMPTY = {
   name: "",
@@ -25,6 +58,8 @@ export default function CreatePage() {
   const [concept, setConcept] = useState("");
   const [form, setForm] = useState(EMPTY);
   const [gradient, setGradient] = useState(GRADIENTS[1]);
+  const [avatar, setAvatar] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -70,7 +105,12 @@ export default function CreatePage() {
       const res = await fetch("/api/characters", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, age: Number(form.age), gradient }),
+        body: JSON.stringify({
+          ...form,
+          age: Number(form.age),
+          gradient,
+          avatar: avatar || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -121,6 +161,58 @@ export default function CreatePage() {
       </section>
 
       <section className="space-y-3 rounded-3xl border border-white/60 bg-white/70 p-5 shadow-[0_8px_32px_rgba(236,72,153,0.10)] backdrop-blur-md">
+        <div className="flex flex-col items-center gap-2 pb-1">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              try {
+                setAvatar(await fileToDataUrl(file));
+              } catch {
+                setError("사진을 불러오지 못했어요. 다른 사진으로 시도해주세요.");
+              }
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className={`relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${gradient} text-3xl shadow-inner ring-2 ring-white transition-transform hover:scale-105`}
+          >
+            {avatar ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatar}
+                alt="프로필 사진"
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <span>{form.emoji || "📷"}</span>
+            )}
+          </button>
+          <div className="flex items-center gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="text-zinc-500 underline-offset-2 hover:text-zinc-700 hover:underline"
+            >
+              {avatar ? "사진 바꾸기" : "프로필 사진 올리기"}
+            </button>
+            {avatar && (
+              <button
+                type="button"
+                onClick={() => setAvatar("")}
+                className="text-rose-400 hover:text-rose-500"
+              >
+                삭제
+              </button>
+            )}
+          </div>
+        </div>
         <div className="flex gap-3">
           <input value={form.name} onChange={set("name")} placeholder="이름" className={inputCls} />
           <input

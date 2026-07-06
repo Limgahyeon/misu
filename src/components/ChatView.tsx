@@ -9,6 +9,7 @@ interface CharacterInfo {
   emoji: string;
   gradient: string;
   job: string;
+  avatar?: string;
 }
 
 interface ChatMessage {
@@ -148,9 +149,18 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
           ←
         </Link>
         <div
-          className={`flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br ${character.gradient} text-lg`}
+          className={`flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${character.gradient} text-lg`}
         >
-          {character.emoji}
+          {character.avatar ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={character.avatar}
+              alt={character.name}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            character.emoji
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <div className="font-semibold leading-tight text-zinc-800">
@@ -180,8 +190,22 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
               </div>
             </div>
           ) : (
-            <div key={i} className="flex justify-start">
-              <div className="max-w-[85%] whitespace-pre-wrap rounded-3xl rounded-bl-lg border border-white/70 bg-white/80 px-4 py-2.5 text-sm leading-relaxed text-zinc-700 shadow-sm backdrop-blur">
+            <div key={i} className="flex items-end gap-2">
+              <div
+                className={`flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${character.gradient} text-sm`}
+              >
+                {character.avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={character.avatar}
+                    alt={character.name}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  character.emoji
+                )}
+              </div>
+              <div className="max-w-[80%] whitespace-pre-wrap rounded-3xl rounded-bl-lg border border-white/70 bg-white/80 px-4 py-2.5 text-sm leading-relaxed text-zinc-700 shadow-sm backdrop-blur">
                 {m.content ? (
                   <RichText text={m.content} />
                 ) : (

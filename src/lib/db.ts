@@ -35,7 +35,12 @@ const ready = db.executeMultiple(`
     last_message_id INTEGER NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
-`);
+`).then(async () => {
+  // 기존 테이블에 avatar 컬럼이 없으면 추가 (이미 있으면 에러 무시)
+  await db
+    .execute("ALTER TABLE characters ADD COLUMN avatar TEXT")
+    .catch(() => {});
+});
 
 export interface Message {
   id: number;
@@ -93,6 +98,7 @@ function rowToCharacter(row: Record<string, unknown>): Character {
     speechStyle: row.speech_style as string,
     relationship: row.relationship as string,
     firstScene: row.first_scene as string,
+    avatar: (row.avatar as string | null) ?? undefined,
   };
 }
 
@@ -123,8 +129,8 @@ export async function createCustomCharacter(
   const id = `c_${crypto.randomUUID().slice(0, 8)}`;
   await db.execute({
     sql: `INSERT INTO characters
-      (id, name, age, job, emoji, gradient, tagline, personality, speech_style, relationship, first_scene)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, name, age, job, emoji, gradient, tagline, personality, speech_style, relationship, first_scene, avatar)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       id,
       c.name,
@@ -137,6 +143,7 @@ export async function createCustomCharacter(
       c.speechStyle,
       c.relationship,
       c.firstScene,
+      c.avatar ?? null,
     ],
   });
   return id;

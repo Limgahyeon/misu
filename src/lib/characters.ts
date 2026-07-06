@@ -10,6 +10,7 @@ export interface Character {
   speechStyle: string;
   relationship: string;
   firstScene: string;
+  avatar?: string;
 }
 
 export const characters: Character[] = [

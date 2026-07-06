@@ -40,6 +40,18 @@ export async function POST(request: NextRequest) {
     ? body.gradient
     : GRADIENTS[0];
 
+  let avatar: string | undefined;
+  if (body.avatar != null && body.avatar !== "") {
+    if (
+      typeof body.avatar !== "string" ||
+      !body.avatar.startsWith("data:image/") ||
+      body.avatar.length > 700_000
+    ) {
+      return Response.json({ error: "invalid avatar" }, { status: 400 });
+    }
+    avatar = body.avatar;
+  }
+
   const id = await createCustomCharacter({
     name: body.name.trim(),
     age,
@@ -51,6 +63,7 @@ export async function POST(request: NextRequest) {
     speechStyle: body.speechStyle.trim(),
     relationship: body.relationship.trim(),
     firstScene: body.firstScene.trim(),
+    avatar,
   });
   return Response.json({ id });
 }

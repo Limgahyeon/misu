@@ -21,6 +21,7 @@ export default async function ChatPage({
         emoji: character.emoji,
         gradient: character.gradient,
         job: character.job,
+        avatar: character.avatar,
       }}
     />
   );

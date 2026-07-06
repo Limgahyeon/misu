@@ -46,9 +46,18 @@ export default async function Home() {
               >
                 <div className="flex items-center gap-4">
                   <div
-                    className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${c.gradient} text-2xl shadow-inner`}
+                    className={`flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${c.gradient} text-2xl shadow-inner`}
                   >
-                    {c.emoji}
+                    {c.avatar ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={c.avatar}
+                        alt={c.name}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      c.emoji
+                    )}
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-baseline gap-2">
