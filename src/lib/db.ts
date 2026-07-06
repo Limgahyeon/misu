@@ -149,6 +149,33 @@ export async function createCustomCharacter(
   return id;
 }
 
+export async function updateCustomCharacter(
+  id: string,
+  c: Omit<Character, "id">
+): Promise<void> {
+  await ready;
+  await db.execute({
+    sql: `UPDATE characters SET
+      name = ?, age = ?, job = ?, emoji = ?, gradient = ?, tagline = ?,
+      personality = ?, speech_style = ?, relationship = ?, first_scene = ?, avatar = ?
+      WHERE id = ?`,
+    args: [
+      c.name,
+      c.age,
+      c.job,
+      c.emoji,
+      c.gradient,
+      c.tagline,
+      c.personality,
+      c.speechStyle,
+      c.relationship,
+      c.firstScene,
+      c.avatar ?? null,
+      id,
+    ],
+  });
+}
+
 export async function deleteCustomCharacter(id: string): Promise<void> {
   await ready;
   await db.execute({ sql: "DELETE FROM characters WHERE id = ?", args: [id] });

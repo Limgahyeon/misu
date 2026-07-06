@@ -1,18 +1,20 @@
 import { NextRequest } from "next/server";
-import { GRADIENTS } from "@/lib/characters";
+import { Character, GRADIENTS } from "@/lib/characters";
 import {
   createCustomCharacter,
   deleteCustomCharacter,
   getCustomCharacter,
   getCustomCharacters,
+  updateCustomCharacter,
 } from "@/lib/db";
 
 export async function GET() {
   return Response.json({ characters: await getCustomCharacters() });
 }
 
-export async function POST(request: NextRequest) {
-  const body = await request.json();
+function parseCharacter(
+  body: Record<string, unknown>
+): Omit<Character, "id"> | { error: string } {
   const fields = [
     "name",
     "job",
@@ -25,20 +27,16 @@ export async function POST(request: NextRequest) {
   ] as const;
 
   for (const f of fields) {
-    if (typeof body[f] !== "string" || !body[f].trim()) {
-      return Response.json({ error: `${f} is required` }, { status: 400 });
+    if (typeof body[f] !== "string" || !(body[f] as string).trim()) {
+      return { error: `${f} is required` };
     }
   }
+  const b = body as Record<string, string>;
   const age = Number(body.age);
   if (!Number.isInteger(age) || age < 19 || age > 99) {
-    return Response.json(
-      { error: "age must be between 19 and 99" },
-      { status: 400 }
-    );
+    return { error: "age must be between 19 and 99" };
   }
-  const gradient = GRADIENTS.includes(body.gradient)
-    ? body.gradient
-    : GRADIENTS[0];
+  const gradient = GRADIENTS.includes(b.gradient) ? b.gradient : GRADIENTS[0];
 
   let avatar: string | undefined;
   if (body.avatar != null && body.avatar !== "") {
@@ -47,24 +45,46 @@ export async function POST(request: NextRequest) {
       !body.avatar.startsWith("data:image/") ||
       body.avatar.length > 700_000
     ) {
-      return Response.json({ error: "invalid avatar" }, { status: 400 });
+      return { error: "invalid avatar" };
     }
     avatar = body.avatar;
   }
 
-  const id = await createCustomCharacter({
-    name: body.name.trim(),
+  return {
+    name: b.name.trim(),
     age,
-    job: body.job.trim(),
-    emoji: body.emoji.trim().slice(0, 8),
+    job: b.job.trim(),
+    emoji: b.emoji.trim().slice(0, 8),
     gradient,
-    tagline: body.tagline.trim(),
-    personality: body.personality.trim(),
-    speechStyle: body.speechStyle.trim(),
-    relationship: body.relationship.trim(),
-    firstScene: body.firstScene.trim(),
+    tagline: b.tagline.trim(),
+    personality: b.personality.trim(),
+    speechStyle: b.speechStyle.trim(),
+    relationship: b.relationship.trim(),
+    firstScene: b.firstScene.trim(),
     avatar,
-  });
+  };
+}
+
+export async function POST(request: NextRequest) {
+  const parsed = parseCharacter(await request.json());
+  if ("error" in parsed) {
+    return Response.json({ error: parsed.error }, { status: 400 });
+  }
+  const id = await createCustomCharacter(parsed);
+  return Response.json({ id });
+}
+
+export async function PUT(request: NextRequest) {
+  const body = await request.json();
+  const id = body.id;
+  if (typeof id !== "string" || !(await getCustomCharacter(id))) {
+    return Response.json({ error: "unknown character" }, { status: 404 });
+  }
+  const parsed = parseCharacter(body);
+  if ("error" in parsed) {
+    return Response.json({ error: parsed.error }, { status: 400 });
+  }
+  await updateCustomCharacter(id, parsed);
   return Response.json({ id });
 }
 

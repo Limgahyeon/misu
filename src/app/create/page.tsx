@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
-import { GRADIENTS } from "@/lib/characters";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { Character, GRADIENTS } from "@/lib/characters";
 
 async function fileToDataUrl(file: File): Promise<string> {
   const url = URL.createObjectURL(file);
@@ -53,8 +53,9 @@ const EMPTY = {
 const inputCls =
   "w-full rounded-2xl border border-rose-100 bg-white/80 px-4 py-3 text-sm text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-rose-300 focus:bg-white";
 
-export default function CreatePage() {
+function CreateForm() {
   const router = useRouter();
+  const editId = useSearchParams().get("edit");
   const [concept, setConcept] = useState("");
   const [form, setForm] = useState(EMPTY);
   const [gradient, setGradient] = useState(GRADIENTS[1]);
@@ -63,6 +64,34 @@ export default function CreatePage() {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!editId) return;
+    fetch("/api/characters")
+      .then((r) => r.json())
+      .then((data) => {
+        const c = (data.characters as Character[] | undefined)?.find(
+          (x) => x.id === editId
+        );
+        if (!c) {
+          setError("수정할 캐릭터를 찾지 못했어요.");
+          return;
+        }
+        setForm({
+          name: c.name,
+          age: String(c.age),
+          job: c.job,
+          emoji: c.emoji,
+          tagline: c.tagline,
+          personality: c.personality,
+          speechStyle: c.speechStyle,
+          relationship: c.relationship,
+          firstScene: c.firstScene,
+        });
+        setGradient(c.gradient);
+        setAvatar(c.avatar ?? "");
+      });
+  }, [editId]);
 
   const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -103,10 +132,11 @@ export default function CreatePage() {
     setError("");
     try {
       const res = await fetch("/api/characters", {
-        method: "POST",
+        method: editId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
+          id: editId ?? undefined,
           age: Number(form.age),
           gradient,
           avatar: avatar || undefined,
@@ -135,8 +165,14 @@ export default function CreatePage() {
           ←
         </Link>
         <div>
-          <h1 className="text-xl font-bold text-zinc-800">나만의 그를 만들기</h1>
-          <p className="text-xs text-zinc-500">상상 속 그 사람, 여기서 현실이 돼요</p>
+          <h1 className="text-xl font-bold text-zinc-800">
+            {editId ? "그를 다듬기" : "나만의 그를 만들기"}
+          </h1>
+          <p className="text-xs text-zinc-500">
+            {editId
+              ? "바꾸고 싶은 부분만 고치고 저장하세요"
+              : "상상 속 그 사람, 여기서 현실이 돼요"}
+          </p>
         </div>
       </header>
 
@@ -260,9 +296,17 @@ export default function CreatePage() {
           disabled={saving}
           className="w-full rounded-2xl bg-gradient-to-r from-purple-400 to-rose-400 py-3.5 text-sm font-semibold text-white shadow-lg shadow-purple-200/60 transition-opacity disabled:opacity-40"
         >
-          {saving ? "저장 중..." : "만나러 가기 💌"}
+          {saving ? "저장 중..." : editId ? "수정 저장하기 💾" : "만나러 가기 💌"}
         </button>
       </section>
     </main>
+  );
+}
+
+export default function CreatePage() {
+  return (
+    <Suspense>
+      <CreateForm />
+    </Suspense>
   );
 }

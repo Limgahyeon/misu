@@ -80,7 +80,16 @@ export default async function Home() {
                 </div>
               </Link>
               {isCustom && (
-                <DeleteCharacterButton id={c.id} name={c.name} />
+                <>
+                  <Link
+                    href={`/create?edit=${c.id}`}
+                    aria-label="캐릭터 수정"
+                    className="absolute right-11 top-3 flex h-7 w-7 items-center justify-center rounded-full text-zinc-300 transition-colors hover:bg-purple-50 hover:text-purple-400"
+                  >
+                    ✎
+                  </Link>
+                  <DeleteCharacterButton id={c.id} name={c.name} />
+                </>
               )}
             </li>
           );
