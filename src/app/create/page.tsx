@@ -48,6 +48,7 @@ const EMPTY = {
   speechStyle: "",
   relationship: "",
   firstScene: "",
+  dialogExamples: "",
 };
 
 const inputCls =
@@ -87,6 +88,7 @@ function CreateForm() {
           speechStyle: c.speechStyle,
           relationship: c.relationship,
           firstScene: c.firstScene,
+          dialogExamples: c.dialogExamples ?? "",
         });
         setGradient(c.gradient);
         setAvatar(c.avatar ?? "");
@@ -108,7 +110,8 @@ function CreateForm() {
       });
       if (!res.ok) throw new Error();
       const data = await res.json();
-      setForm({
+      setForm((f) => ({
+        dialogExamples: f.dialogExamples,
         name: data.name ?? "",
         age: String(data.age ?? ""),
         job: data.job ?? "",
@@ -118,7 +121,7 @@ function CreateForm() {
         speechStyle: data.speechStyle ?? "",
         relationship: data.relationship ?? "",
         firstScene: data.firstScene ?? "",
-      });
+      }));
     } catch {
       setError("생성에 실패했어요. 다시 시도해주세요.");
     } finally {
@@ -273,6 +276,18 @@ function CreateForm() {
         <textarea value={form.speechStyle} onChange={set("speechStyle")} rows={2} placeholder="말투 (반말/존댓말, 특유의 표현)" className={inputCls} />
         <textarea value={form.relationship} onChange={set("relationship")} rows={2} placeholder="나와의 관계 (어떻게 만나 사귀게 됐는지)" className={inputCls} />
         <textarea value={form.firstScene} onChange={set("firstScene")} rows={4} placeholder="첫 장면 (*지문*과 대사를 섞어서)" className={inputCls} />
+        <div>
+          <textarea
+            value={form.dialogExamples}
+            onChange={set("dialogExamples")}
+            rows={4}
+            placeholder={"말투 예시 대화 (선택) — 실제 대화를 붙여넣으면 말투를 따라해요\n예)\n나: 오늘 뭐해?\n그: 헐 누나 마침 연락하려 했는데ㅋㅋ 지금 헬스장 가는 중!"}
+            className={inputCls}
+          />
+          <p className="mt-1 px-1 text-[11px] text-zinc-400">
+            채팅 화면에는 안 보여요. AI가 말투 학습용으로만 써요.
+          </p>
+        </div>
 
         <div>
           <p className="mb-2 text-xs font-medium text-zinc-500">프로필 색</p>

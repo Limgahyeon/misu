@@ -50,6 +50,17 @@ function parseCharacter(
     avatar = body.avatar;
   }
 
+  let dialogExamples: string | undefined;
+  if (body.dialogExamples != null && body.dialogExamples !== "") {
+    if (
+      typeof body.dialogExamples !== "string" ||
+      body.dialogExamples.length > 4000
+    ) {
+      return { error: "invalid dialogExamples" };
+    }
+    dialogExamples = body.dialogExamples.trim();
+  }
+
   return {
     name: b.name.trim(),
     age,
@@ -62,6 +73,7 @@ function parseCharacter(
     relationship: b.relationship.trim(),
     firstScene: b.firstScene.trim(),
     avatar,
+    dialogExamples,
   };
 }
 

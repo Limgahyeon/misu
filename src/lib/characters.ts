@@ -11,6 +11,7 @@ export interface Character {
   relationship: string;
   firstScene: string;
   avatar?: string;
+  dialogExamples?: string;
 }
 
 export const characters: Character[] = [

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { characters } from "@/lib/characters";
 import { getCustomCharacters } from "@/lib/db";
 import DeleteCharacterButton from "@/components/DeleteCharacterButton";
+import ProfileButton from "@/components/ProfileButton";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,8 @@ export default async function Home() {
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-md flex-col px-5 py-10">
-      <header className="mb-8 text-center">
+      <header className="relative mb-8 text-center">
+        <ProfileButton />
         <h1 className="text-4xl font-bold tracking-tight text-zinc-800">
           misu
           <span className="bg-gradient-to-r from-rose-400 to-purple-400 bg-clip-text text-transparent">

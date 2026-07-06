@@ -35,10 +35,18 @@ const ready = db.executeMultiple(`
     last_message_id INTEGER NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS profile (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    content TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `).then(async () => {
-  // 기존 테이블에 avatar 컬럼이 없으면 추가 (이미 있으면 에러 무시)
+  // 기존 테이블에 없는 컬럼 추가 (이미 있으면 에러 무시)
   await db
     .execute("ALTER TABLE characters ADD COLUMN avatar TEXT")
+    .catch(() => {});
+  await db
+    .execute("ALTER TABLE characters ADD COLUMN dialog_examples TEXT")
     .catch(() => {});
 });
 
@@ -99,6 +107,7 @@ function rowToCharacter(row: Record<string, unknown>): Character {
     relationship: row.relationship as string,
     firstScene: row.first_scene as string,
     avatar: (row.avatar as string | null) ?? undefined,
+    dialogExamples: (row.dialog_examples as string | null) ?? undefined,
   };
 }
 
@@ -129,8 +138,8 @@ export async function createCustomCharacter(
   const id = `c_${crypto.randomUUID().slice(0, 8)}`;
   await db.execute({
     sql: `INSERT INTO characters
-      (id, name, age, job, emoji, gradient, tagline, personality, speech_style, relationship, first_scene, avatar)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, name, age, job, emoji, gradient, tagline, personality, speech_style, relationship, first_scene, avatar, dialog_examples)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       id,
       c.name,
@@ -144,6 +153,7 @@ export async function createCustomCharacter(
       c.relationship,
       c.firstScene,
       c.avatar ?? null,
+      c.dialogExamples ?? null,
     ],
   });
   return id;
@@ -157,7 +167,7 @@ export async function updateCustomCharacter(
   await db.execute({
     sql: `UPDATE characters SET
       name = ?, age = ?, job = ?, emoji = ?, gradient = ?, tagline = ?,
-      personality = ?, speech_style = ?, relationship = ?, first_scene = ?, avatar = ?
+      personality = ?, speech_style = ?, relationship = ?, first_scene = ?, avatar = ?, dialog_examples = ?
       WHERE id = ?`,
     args: [
       c.name,
@@ -171,6 +181,7 @@ export async function updateCustomCharacter(
       c.relationship,
       c.firstScene,
       c.avatar ?? null,
+      c.dialogExamples ?? null,
       id,
     ],
   });
@@ -180,6 +191,24 @@ export async function deleteCustomCharacter(id: string): Promise<void> {
   await ready;
   await db.execute({ sql: "DELETE FROM characters WHERE id = ?", args: [id] });
   await resetConversation(id);
+}
+
+// --- user profile ---
+
+export async function getProfile(): Promise<string | undefined> {
+  await ready;
+  const result = await db.execute("SELECT content FROM profile WHERE id = 1");
+  const content = result.rows[0]?.content as string | undefined;
+  return content?.trim() ? content : undefined;
+}
+
+export async function saveProfile(content: string): Promise<void> {
+  await ready;
+  await db.execute({
+    sql: `INSERT INTO profile (id, content, updated_at) VALUES (1, ?, datetime('now'))
+      ON CONFLICT(id) DO UPDATE SET content = excluded.content, updated_at = datetime('now')`,
+    args: [content],
+  });
 }
 
 // --- long-term memory ---

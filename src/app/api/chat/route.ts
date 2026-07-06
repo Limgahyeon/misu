@@ -2,7 +2,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
 import { after, NextRequest } from "next/server";
 import { Character } from "@/lib/characters";
-import { addMessage, getMemory, getMessages, resetConversation } from "@/lib/db";
+import {
+  addMessage,
+  getMemory,
+  getMessages,
+  getProfile,
+  resetConversation,
+} from "@/lib/db";
 import { updateMemoryIfNeeded } from "@/lib/memory";
 import { buildSystemPrompt } from "@/lib/prompt";
 import { findCharacter } from "@/lib/resolve";
@@ -14,15 +20,23 @@ const HISTORY_LIMIT = 40;
 
 type History = { role: "user" | "assistant"; content: string }[];
 
+const CLAUDE_MODELS: Record<string, string> = {
+  claude: "claude-sonnet-4-6", // 이전 버전 클라이언트 호환
+  haiku: "claude-haiku-4-5-20251001",
+  sonnet: "claude-sonnet-4-6",
+  opus: "claude-opus-4-7",
+};
+
 async function* streamGemini(
   character: Character,
   history: History,
-  memory?: string
+  memory?: string,
+  profile?: string
 ) {
   const stream = await gemini.models.generateContentStream({
     model: "gemini-2.5-flash",
     config: {
-      systemInstruction: buildSystemPrompt(character, memory),
+      systemInstruction: buildSystemPrompt(character, memory, profile),
       maxOutputTokens: 1024,
     },
     contents: history.map((m) => ({
@@ -36,14 +50,16 @@ async function* streamGemini(
 }
 
 async function* streamClaude(
+  model: string,
   character: Character,
   history: History,
-  memory?: string
+  memory?: string,
+  profile?: string
 ) {
   const stream = anthropic.messages.stream({
-    model: "claude-sonnet-4-6",
+    model,
     max_tokens: 1024,
-    system: buildSystemPrompt(character, memory),
+    system: buildSystemPrompt(character, memory, profile),
     messages: history,
   });
   for await (const event of stream) {
@@ -82,19 +98,20 @@ export async function POST(request: NextRequest) {
 
   await addMessage(character.id, "user", message.trim());
 
-  const [messages, memory] = await Promise.all([
+  const [messages, memory, profile] = await Promise.all([
     getMessages(character.id),
     getMemory(character.id),
+    getProfile(),
   ]);
   const history = messages
     .filter((m) => m.id > (memory?.last_message_id ?? 0))
     .slice(-HISTORY_LIMIT)
     .map((m) => ({ role: m.role, content: m.content }));
 
-  const textStream =
-    model === "claude"
-      ? streamClaude(character, history, memory?.summary)
-      : streamGemini(character, history, memory?.summary);
+  const claudeModel = CLAUDE_MODELS[model as string];
+  const textStream = claudeModel
+    ? streamClaude(claudeModel, character, history, memory?.summary, profile)
+    : streamGemini(character, history, memory?.summary, profile);
 
   const encoder = new TextEncoder();
   const body = new ReadableStream({

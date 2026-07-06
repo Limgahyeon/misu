@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import ProfileModal from "./ProfileModal";
 
 interface CharacterInfo {
   id: string;
@@ -34,12 +35,16 @@ function RichText({ text }: { text: string }) {
   );
 }
 
-type ModelId = "gemini" | "claude";
+type ModelId = "gemini" | "haiku" | "sonnet" | "opus";
 
-const MODELS: { id: ModelId; label: string; badge: string }[] = [
+const MODELS: { id: ModelId; label: string; badge?: string }[] = [
   { id: "gemini", label: "Gemini", badge: "무료" },
-  { id: "claude", label: "Claude", badge: "유료" },
+  { id: "haiku", label: "Haiku" },
+  { id: "sonnet", label: "Sonnet" },
+  { id: "opus", label: "Opus" },
 ];
+
+const MODEL_IDS = MODELS.map((m) => m.id) as string[];
 
 export default function ChatView({ character }: { character: CharacterInfo }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -47,6 +52,8 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
   const [sending, setSending] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [model, setModel] = useState<ModelId>("gemini");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [viewportHeight, setViewportHeight] = useState<number>();
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -91,7 +98,8 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
 
   useEffect(() => {
     const saved = localStorage.getItem("misu-model");
-    if (saved === "claude" || saved === "gemini") setModel(saved);
+    if (saved === "claude") setModel("sonnet");
+    else if (saved && MODEL_IDS.includes(saved)) setModel(saved as ModelId);
   }, []);
 
   const selectModel = useCallback((id: ModelId) => {
@@ -211,13 +219,47 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
           </div>
           <div className="text-xs text-zinc-400">{character.job}</div>
         </div>
-        <button
-          onClick={reset}
-          className="rounded-lg px-2 py-1 text-xs text-zinc-400 hover:bg-rose-50 hover:text-rose-400"
-        >
-          대화 초기화
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-label="메뉴"
+            className="flex h-8 w-8 flex-col items-center justify-center gap-[3px] rounded-lg text-zinc-400 hover:bg-rose-50 hover:text-zinc-600"
+          >
+            <span className="block h-0.5 w-4 rounded bg-current" />
+            <span className="block h-0.5 w-4 rounded bg-current" />
+            <span className="block h-0.5 w-4 rounded bg-current" />
+          </button>
+          {menuOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setMenuOpen(false)}
+              />
+              <div className="absolute right-0 top-10 z-50 w-40 overflow-hidden rounded-2xl border border-white/70 bg-white/95 py-1 shadow-xl backdrop-blur">
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setProfileOpen(true);
+                  }}
+                  className="block w-full px-4 py-2.5 text-left text-sm text-zinc-600 hover:bg-rose-50"
+                >
+                  💌 내 정보
+                </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    reset();
+                  }}
+                  className="block w-full px-4 py-2.5 text-left text-sm text-rose-400 hover:bg-rose-50"
+                >
+                  🗑 대화 초기화
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </header>
+      {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
 
       <div
         ref={scrollRef}
@@ -280,13 +322,9 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
               }`}
             >
               {m.label}
-              <span
-                className={`ml-1 ${
-                  m.id === "gemini" ? "text-emerald-500" : "text-amber-500"
-                }`}
-              >
-                {m.badge}
-              </span>
+              {m.badge && (
+                <span className="ml-1 text-emerald-500">{m.badge}</span>
+              )}
             </button>
           ))}
         </div>
