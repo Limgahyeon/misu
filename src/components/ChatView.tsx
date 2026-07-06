@@ -49,6 +49,18 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
   const [model, setModel] = useState<ModelId>("gemini");
   const [viewportHeight, setViewportHeight] = useState<number>();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 키보드 애니메이션이 끝날 때까지 여러 번 바닥으로 스크롤해서 마지막 메시지를 보이게 유지
+  const stickToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const toBottom = () => {
+      el.scrollTop = el.scrollHeight;
+    };
+    toBottom();
+    [80, 180, 320, 500].forEach((ms) => setTimeout(toBottom, ms));
+  }, []);
 
   // 키보드가 올라오면 채팅 컨테이너 높이를 보이는 영역에 맞춰 줄인다 (iOS 대응)
   useEffect(() => {
@@ -65,9 +77,7 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
     const update = () => {
       setViewportHeight(vv.height);
       window.scrollTo(0, 0);
-      requestAnimationFrame(() =>
-        bottomRef.current?.scrollIntoView({ block: "end" })
-      );
+      stickToBottom();
     };
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
@@ -77,7 +87,7 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
       document.body.style.overflow = "";
       document.documentElement.style.overscrollBehavior = "";
     };
-  }, []);
+  }, [stickToBottom]);
 
   useEffect(() => {
     const saved = localStorage.getItem("misu-model");
@@ -209,7 +219,10 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
         </button>
       </header>
 
-      <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-5">
+      <div
+        ref={scrollRef}
+        className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-5"
+      >
         {!loaded && (
           <p className="pt-10 text-center text-sm text-zinc-400">
             대화를 불러오는 중...
@@ -288,6 +301,7 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onFocus={stickToBottom}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
