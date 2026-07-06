@@ -47,7 +47,37 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
   const [sending, setSending] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [model, setModel] = useState<ModelId>("gemini");
+  const [viewportHeight, setViewportHeight] = useState<number>();
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // 키보드가 올라오면 채팅 컨테이너 높이를 보이는 영역에 맞춰 줄인다 (iOS 대응)
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overscrollBehavior = "none";
+
+    const vv = window.visualViewport;
+    if (!vv) {
+      return () => {
+        document.body.style.overflow = "";
+        document.documentElement.style.overscrollBehavior = "";
+      };
+    }
+    const update = () => {
+      setViewportHeight(vv.height);
+      window.scrollTo(0, 0);
+      requestAnimationFrame(() =>
+        bottomRef.current?.scrollIntoView({ block: "end" })
+      );
+    };
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      document.body.style.overflow = "";
+      document.documentElement.style.overscrollBehavior = "";
+    };
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem("misu-model");
@@ -143,7 +173,10 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
   }, [character.id, character.name]);
 
   return (
-    <div className="mx-auto flex h-dvh w-full max-w-md flex-col">
+    <div
+      className="fixed inset-x-0 top-0 mx-auto flex w-full max-w-md flex-col"
+      style={{ height: viewportHeight ?? "100dvh" }}
+    >
       <header className="flex items-center gap-3 border-b border-white/60 bg-white/60 px-4 py-3 backdrop-blur-md">
         <Link href="/" className="p-1 text-zinc-400 hover:text-zinc-700">
           ←
@@ -176,7 +209,7 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
         </button>
       </header>
 
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
+      <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-5">
         {!loaded && (
           <p className="pt-10 text-center text-sm text-zinc-400">
             대화를 불러오는 중...

@@ -10,6 +10,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  // 키보드가 올라오면 화면을 밀어올리지 않고 레이아웃 자체를 줄임 (Android/Chrome)
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({
