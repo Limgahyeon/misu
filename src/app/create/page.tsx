@@ -38,6 +38,27 @@ async function fileToDataUrl(file: File): Promise<string> {
   }
 }
 
+async function screenshotToDataUrl(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = reject;
+      el.src = url;
+    });
+    // 글자가 읽힐 정도로만 축소 (최대 1280px, 비율 유지)
+    const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.85);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 const EMPTY = {
   name: "",
   age: "",
@@ -65,6 +86,40 @@ function CreateForm() {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [extracting, setExtracting] = useState(false);
+  const shotRef = useRef<HTMLInputElement>(null);
+
+  async function extractFromScreenshots(files: FileList) {
+    setExtracting(true);
+    setError("");
+    try {
+      let added = "";
+      for (const file of Array.from(files).slice(0, 5)) {
+        const image = await screenshotToDataUrl(file);
+        const res = await fetch("/api/characters/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image }),
+        });
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (data.examples) added += (added ? "\n" : "") + data.examples;
+      }
+      if (!added) {
+        setError("스크린샷에서 대화를 찾지 못했어요. 다른 이미지로 시도해주세요.");
+        return;
+      }
+      setForm((f) => ({
+        ...f,
+        dialogExamples: (f.dialogExamples ? f.dialogExamples + "\n" : "") +
+          added.slice(0, 4000 - f.dialogExamples.length),
+      }));
+    } catch {
+      setError("말투 학습에 실패했어요. 다시 시도해주세요.");
+    } finally {
+      setExtracting(false);
+    }
+  }
 
   useEffect(() => {
     if (!editId) return;
@@ -284,6 +339,28 @@ function CreateForm() {
             placeholder={"말투 예시 대화 (선택) — 실제 대화를 붙여넣으면 말투를 따라해요\n예)\n나: 오늘 뭐해?\n그: 헐 누나 마침 연락하려 했는데ㅋㅋ 지금 헬스장 가는 중!"}
             className={inputCls}
           />
+          <input
+            ref={shotRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const files = e.target.files;
+              e.target.value = "";
+              if (files?.length) extractFromScreenshots(files);
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => shotRef.current?.click()}
+            disabled={extracting}
+            className="mt-2 w-full rounded-2xl border border-dashed border-purple-200 bg-purple-50/50 py-2.5 text-xs font-medium text-purple-500 transition-colors hover:border-purple-300 hover:bg-purple-50 disabled:opacity-50"
+          >
+            {extracting
+              ? "스크린샷 읽는 중... 📖"
+              : "📸 카톡 스크린샷 올려서 말투 학습하기 (최대 5장)"}
+          </button>
           <p className="mt-1 px-1 text-[11px] text-zinc-400">
             채팅 화면에는 안 보여요. AI가 말투 학습용으로만 써요.
           </p>
