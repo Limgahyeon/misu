@@ -19,7 +19,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko" className="h-full antialiased">
-      <body className="h-full bg-zinc-950 text-zinc-100">{children}</body>
+      <body className="h-full bg-gradient-to-b from-rose-50 via-purple-50/70 to-amber-50/60 text-zinc-800">
+        {children}
+      </body>
     </html>
   );
 }

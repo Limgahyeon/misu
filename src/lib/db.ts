@@ -1,4 +1,5 @@
 import { createClient } from "@libsql/client";
+import { Character } from "./characters";
 
 const db = createClient({
   url: process.env.TURSO_DATABASE_URL ?? "file:misu.db",
@@ -14,6 +15,26 @@ const ready = db.executeMultiple(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_messages_character ON messages (character_id, id);
+  CREATE TABLE IF NOT EXISTS characters (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    age INTEGER NOT NULL,
+    job TEXT NOT NULL,
+    emoji TEXT NOT NULL,
+    gradient TEXT NOT NULL,
+    tagline TEXT NOT NULL,
+    personality TEXT NOT NULL,
+    speech_style TEXT NOT NULL,
+    relationship TEXT NOT NULL,
+    first_scene TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS memories (
+    character_id TEXT PRIMARY KEY,
+    summary TEXT NOT NULL,
+    last_message_id INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 export interface Message {
@@ -50,5 +71,120 @@ export async function resetConversation(characterId: string): Promise<void> {
   await db.execute({
     sql: "DELETE FROM messages WHERE character_id = ?",
     args: [characterId],
+  });
+  await db.execute({
+    sql: "DELETE FROM memories WHERE character_id = ?",
+    args: [characterId],
+  });
+}
+
+// --- custom characters ---
+
+function rowToCharacter(row: Record<string, unknown>): Character {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    age: row.age as number,
+    job: row.job as string,
+    emoji: row.emoji as string,
+    gradient: row.gradient as string,
+    tagline: row.tagline as string,
+    personality: row.personality as string,
+    speechStyle: row.speech_style as string,
+    relationship: row.relationship as string,
+    firstScene: row.first_scene as string,
+  };
+}
+
+export async function getCustomCharacters(): Promise<Character[]> {
+  await ready;
+  const result = await db.execute(
+    "SELECT * FROM characters ORDER BY created_at DESC"
+  );
+  return result.rows.map((r) => rowToCharacter(r as Record<string, unknown>));
+}
+
+export async function getCustomCharacter(
+  id: string
+): Promise<Character | undefined> {
+  await ready;
+  const result = await db.execute({
+    sql: "SELECT * FROM characters WHERE id = ?",
+    args: [id],
+  });
+  const row = result.rows[0];
+  return row ? rowToCharacter(row as Record<string, unknown>) : undefined;
+}
+
+export async function createCustomCharacter(
+  c: Omit<Character, "id">
+): Promise<string> {
+  await ready;
+  const id = `c_${crypto.randomUUID().slice(0, 8)}`;
+  await db.execute({
+    sql: `INSERT INTO characters
+      (id, name, age, job, emoji, gradient, tagline, personality, speech_style, relationship, first_scene)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      id,
+      c.name,
+      c.age,
+      c.job,
+      c.emoji,
+      c.gradient,
+      c.tagline,
+      c.personality,
+      c.speechStyle,
+      c.relationship,
+      c.firstScene,
+    ],
+  });
+  return id;
+}
+
+export async function deleteCustomCharacter(id: string): Promise<void> {
+  await ready;
+  await db.execute({ sql: "DELETE FROM characters WHERE id = ?", args: [id] });
+  await resetConversation(id);
+}
+
+// --- long-term memory ---
+
+export interface Memory {
+  summary: string;
+  last_message_id: number;
+}
+
+export async function getMemory(
+  characterId: string
+): Promise<Memory | undefined> {
+  await ready;
+  const result = await db.execute({
+    sql: "SELECT summary, last_message_id FROM memories WHERE character_id = ?",
+    args: [characterId],
+  });
+  const row = result.rows[0];
+  return row
+    ? {
+        summary: row.summary as string,
+        last_message_id: row.last_message_id as number,
+      }
+    : undefined;
+}
+
+export async function saveMemory(
+  characterId: string,
+  summary: string,
+  lastMessageId: number
+): Promise<void> {
+  await ready;
+  await db.execute({
+    sql: `INSERT INTO memories (character_id, summary, last_message_id, updated_at)
+      VALUES (?, ?, ?, datetime('now'))
+      ON CONFLICT(character_id) DO UPDATE SET
+        summary = excluded.summary,
+        last_message_id = excluded.last_message_id,
+        updated_at = datetime('now')`,
+    args: [characterId, summary, lastMessageId],
   });
 }

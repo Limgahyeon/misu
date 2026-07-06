@@ -22,7 +22,7 @@ function RichText({ text }: { text: string }) {
     <>
       {parts.map((part, i) =>
         part.startsWith("*") && part.endsWith("*") ? (
-          <span key={i} className="italic text-zinc-400">
+          <span key={i} className="italic text-purple-400/90">
             {part.slice(1, -1)}
           </span>
         ) : (
@@ -143,8 +143,8 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
 
   return (
     <div className="mx-auto flex h-dvh w-full max-w-md flex-col">
-      <header className="flex items-center gap-3 border-b border-zinc-800 bg-zinc-950/90 px-4 py-3 backdrop-blur">
-        <Link href="/" className="p-1 text-zinc-400 hover:text-zinc-100">
+      <header className="flex items-center gap-3 border-b border-white/60 bg-white/60 px-4 py-3 backdrop-blur-md">
+        <Link href="/" className="p-1 text-zinc-400 hover:text-zinc-700">
           ←
         </Link>
         <div
@@ -153,12 +153,14 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
           {character.emoji}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="font-semibold leading-tight">{character.name}</div>
-          <div className="text-xs text-zinc-500">{character.job}</div>
+          <div className="font-semibold leading-tight text-zinc-800">
+            {character.name}
+          </div>
+          <div className="text-xs text-zinc-400">{character.job}</div>
         </div>
         <button
           onClick={reset}
-          className="rounded-lg px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+          className="rounded-lg px-2 py-1 text-xs text-zinc-400 hover:bg-rose-50 hover:text-rose-400"
         >
           대화 초기화
         </button>
@@ -166,24 +168,24 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
         {!loaded && (
-          <p className="pt-10 text-center text-sm text-zinc-600">
+          <p className="pt-10 text-center text-sm text-zinc-400">
             대화를 불러오는 중...
           </p>
         )}
         {messages.map((m, i) =>
           m.role === "user" ? (
             <div key={i} className="flex justify-end">
-              <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-rose-500 px-4 py-2.5 text-sm leading-relaxed text-white">
+              <div className="max-w-[80%] whitespace-pre-wrap rounded-3xl rounded-br-lg bg-gradient-to-br from-rose-400 to-pink-400 px-4 py-2.5 text-sm leading-relaxed text-white shadow-md shadow-rose-200/60">
                 {m.content}
               </div>
             </div>
           ) : (
             <div key={i} className="flex justify-start">
-              <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-zinc-800 px-4 py-2.5 text-sm leading-relaxed">
+              <div className="max-w-[85%] whitespace-pre-wrap rounded-3xl rounded-bl-lg border border-white/70 bg-white/80 px-4 py-2.5 text-sm leading-relaxed text-zinc-700 shadow-sm backdrop-blur">
                 {m.content ? (
                   <RichText text={m.content} />
                 ) : (
-                  <span className="inline-block animate-pulse text-zinc-500">
+                  <span className="inline-block animate-pulse text-zinc-400">
                     ···
                   </span>
                 )}
@@ -194,23 +196,23 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
         <div ref={bottomRef} />
       </div>
 
-      <div className="flex items-center gap-2 border-t border-zinc-800 bg-zinc-950 px-4 pt-2.5">
-        <span className="text-xs text-zinc-600">모델</span>
-        <div className="flex gap-1 rounded-lg bg-zinc-900 p-0.5">
+      <div className="flex items-center gap-2 border-t border-white/60 bg-white/60 px-4 pt-2.5 backdrop-blur-md">
+        <span className="text-xs text-zinc-400">모델</span>
+        <div className="flex gap-1 rounded-xl bg-rose-50/80 p-0.5">
           {MODELS.map((m) => (
             <button
               key={m.id}
               onClick={() => selectModel(m.id)}
-              className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+              className={`rounded-lg px-2.5 py-1 text-xs transition-colors ${
                 model === m.id
-                  ? "bg-zinc-700 text-zinc-100"
-                  : "text-zinc-500 hover:text-zinc-300"
+                  ? "bg-white text-zinc-700 shadow-sm"
+                  : "text-zinc-400 hover:text-zinc-600"
               }`}
             >
               {m.label}
               <span
                 className={`ml-1 ${
-                  m.id === "gemini" ? "text-emerald-400" : "text-amber-400"
+                  m.id === "gemini" ? "text-emerald-500" : "text-amber-500"
                 }`}
               >
                 {m.badge}
@@ -224,7 +226,7 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
           e.preventDefault();
           send();
         }}
-        className="flex items-end gap-2 bg-zinc-950 px-4 py-3"
+        className="flex items-end gap-2 bg-white/60 px-4 py-3 backdrop-blur-md"
       >
         <textarea
           value={input}
@@ -237,12 +239,12 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
           }}
           rows={1}
           placeholder={`${character.name}에게 메시지 보내기`}
-          className="max-h-32 flex-1 resize-none rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-sm outline-none placeholder:text-zinc-600 focus:border-rose-400/60"
+          className="max-h-32 flex-1 resize-none rounded-2xl border border-rose-100 bg-white/90 px-4 py-2.5 text-sm text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-rose-300"
         />
         <button
           type="submit"
           disabled={sending || !input.trim()}
-          className="rounded-xl bg-rose-500 px-4 py-2.5 text-sm font-medium text-white transition-opacity disabled:opacity-40"
+          className="rounded-2xl bg-gradient-to-r from-rose-400 to-pink-400 px-4 py-2.5 text-sm font-medium text-white shadow-md shadow-rose-200/60 transition-opacity disabled:opacity-40"
         >
           전송
         </button>

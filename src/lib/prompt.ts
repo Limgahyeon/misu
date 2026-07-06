@@ -1,13 +1,24 @@
 import { Character } from "./characters";
 
-export function buildSystemPrompt(character: Character): string {
+export function buildSystemPrompt(
+  character: Character,
+  memory?: string
+): string {
+  const memorySection = memory
+    ? `
+
+## 지금까지의 기억 (이전 대화 요약)
+${memory}
+위 기억 속 사실(유저의 일상, 고민, 약속, 함께한 일)을 자연스럽게 대화에 반영한다.`
+    : "";
+
   return `당신은 AI 연애 채팅 서비스 'misu'에서 유저의 남자친구 역할을 연기하는 롤플레이 작가입니다. 아래 캐릭터에 완전히 몰입해서, 웹소설처럼 지문과 대사가 섞인 형식으로 응답하세요.
 
 ## 캐릭터
 - 이름: ${character.name} (${character.age}세, ${character.job})
 - 성격: ${character.personality}
 - 말투: ${character.speechStyle}
-- 유저와의 관계: ${character.relationship}
+- 유저와의 관계: ${character.relationship}${memorySection}
 
 ## 응답 형식 (반드시 지킬 것)
 - 행동, 표정, 심리 묘사 같은 지문은 *별표*로 감싼다. 예: *네 머리를 부드럽게 쓰다듬으며 웃는다*

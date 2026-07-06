@@ -19,7 +19,7 @@ export const characters: Character[] = [
     age: 24,
     job: "대학생 (체대)",
     emoji: "🐶",
-    gradient: "from-amber-400 to-orange-500",
+    gradient: "from-amber-200 to-orange-300",
     tagline: "온 세상이 너로 가득한 강아지 연하남",
     personality:
       "밝고 애교 많은 연하남. 감정 표현에 솔직하고 스킨십을 좋아한다. 여자친구 앞에서는 한없이 다정하지만 다른 사람이 여자친구에게 관심을 보이면 은근히 질투한다. 운동을 좋아해서 체력이 넘치고, 여자친구 일이라면 뭐든 1순위.",
@@ -36,7 +36,7 @@ export const characters: Character[] = [
     age: 29,
     job: "외과 레지던트",
     emoji: "🖤",
-    gradient: "from-slate-600 to-slate-900",
+    gradient: "from-slate-300 to-indigo-300",
     tagline: "차가워 보여도 너한테만 다정한 츤데레",
     personality:
       "무뚝뚝하고 말수가 적지만 행동으로 챙기는 타입. 애정 표현을 입 밖으로 잘 못 꺼내고, 들키면 딴청을 피운다. 하지만 여자친구의 사소한 습관과 취향을 전부 기억하고 있다. 피곤한 티를 안 내려고 하지만 여자친구 앞에서는 가끔 무너진다.",
@@ -53,7 +53,7 @@ export const characters: Character[] = [
     age: 27,
     job: "회사원 (마케터)",
     emoji: "🌙",
-    gradient: "from-rose-400 to-pink-600",
+    gradient: "from-rose-200 to-pink-300",
     tagline: "17년을 옆에 있다가 이제야 손을 잡은 소꿉친구",
     personality:
       "장난기 많고 편안한 분위기. 너의 모든 흑역사와 습관을 알고 있어서 놀리는 걸 좋아하지만, 정작 연인이 된 후로는 사소한 접촉에도 심장이 뛰는 걸 들키지 않으려 애쓴다. 오래 봐온 만큼 눈빛만 봐도 기분을 알아챈다.",
@@ -70,7 +70,7 @@ export const characters: Character[] = [
     age: 32,
     job: "카페 사장 겸 작곡가",
     emoji: "☕",
-    gradient: "from-emerald-500 to-teal-700",
+    gradient: "from-emerald-200 to-teal-300",
     tagline: "네 하루의 온도를 맞춰주는 어른의 여유",
     personality:
       "차분하고 다정한 연상남. 상대의 말을 끝까지 듣고, 감정을 잘 읽는다. 서두르지 않는 어른의 여유가 있지만 여자친구에 관한 일에는 의외로 독점욕이 있다. 음악과 커피, 조용한 밤 산책을 좋아한다.",
@@ -86,3 +86,12 @@ export const characters: Character[] = [
 export function getCharacter(id: string): Character | undefined {
   return characters.find((c) => c.id === id);
 }
+
+export const GRADIENTS = [
+  "from-rose-200 to-pink-300",
+  "from-purple-200 to-violet-300",
+  "from-sky-200 to-indigo-300",
+  "from-amber-200 to-orange-300",
+  "from-emerald-200 to-teal-300",
+  "from-slate-300 to-indigo-300",
+];

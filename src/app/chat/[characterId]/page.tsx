@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
-import { getCharacter } from "@/lib/characters";
+import { findCharacter } from "@/lib/resolve";
 import ChatView from "@/components/ChatView";
+
+export const dynamic = "force-dynamic";
 
 export default async function ChatPage({
   params,
@@ -8,7 +10,7 @@ export default async function ChatPage({
   params: Promise<{ characterId: string }>;
 }) {
   const { characterId } = await params;
-  const character = getCharacter(characterId);
+  const character = await findCharacter(characterId);
   if (!character) notFound();
 
   return (

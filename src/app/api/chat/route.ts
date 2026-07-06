@@ -1,9 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import { NextRequest } from "next/server";
-import { getCharacter, Character } from "@/lib/characters";
-import { addMessage, getMessages, resetConversation } from "@/lib/db";
+import { after, NextRequest } from "next/server";
+import { Character } from "@/lib/characters";
+import { addMessage, getMemory, getMessages, resetConversation } from "@/lib/db";
+import { updateMemoryIfNeeded } from "@/lib/memory";
 import { buildSystemPrompt } from "@/lib/prompt";
+import { findCharacter } from "@/lib/resolve";
 
 const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const anthropic = new Anthropic();
@@ -12,11 +14,15 @@ const HISTORY_LIMIT = 40;
 
 type History = { role: "user" | "assistant"; content: string }[];
 
-async function* streamGemini(character: Character, history: History) {
+async function* streamGemini(
+  character: Character,
+  history: History,
+  memory?: string
+) {
   const stream = await gemini.models.generateContentStream({
     model: "gemini-2.5-flash",
     config: {
-      systemInstruction: buildSystemPrompt(character),
+      systemInstruction: buildSystemPrompt(character, memory),
       maxOutputTokens: 1024,
     },
     contents: history.map((m) => ({
@@ -29,11 +35,15 @@ async function* streamGemini(character: Character, history: History) {
   }
 }
 
-async function* streamClaude(character: Character, history: History) {
+async function* streamClaude(
+  character: Character,
+  history: History,
+  memory?: string
+) {
   const stream = anthropic.messages.stream({
     model: "claude-sonnet-4-6",
     max_tokens: 1024,
-    system: buildSystemPrompt(character),
+    system: buildSystemPrompt(character, memory),
     messages: history,
   });
   for await (const event of stream) {
@@ -48,7 +58,7 @@ async function* streamClaude(character: Character, history: History) {
 
 export async function GET(request: NextRequest) {
   const characterId = request.nextUrl.searchParams.get("characterId");
-  const character = characterId && getCharacter(characterId);
+  const character = characterId ? await findCharacter(characterId) : undefined;
   if (!character) {
     return Response.json({ error: "unknown character" }, { status: 404 });
   }
@@ -63,21 +73,28 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const { characterId, message, model } = await request.json();
-  const character = characterId && getCharacter(characterId);
+  const character = characterId
+    ? await findCharacter(characterId)
+    : undefined;
   if (!character || typeof message !== "string" || !message.trim()) {
     return Response.json({ error: "invalid request" }, { status: 400 });
   }
 
   await addMessage(character.id, "user", message.trim());
 
-  const history = (await getMessages(character.id))
+  const [messages, memory] = await Promise.all([
+    getMessages(character.id),
+    getMemory(character.id),
+  ]);
+  const history = messages
+    .filter((m) => m.id > (memory?.last_message_id ?? 0))
     .slice(-HISTORY_LIMIT)
     .map((m) => ({ role: m.role, content: m.content }));
 
   const textStream =
     model === "claude"
-      ? streamClaude(character, history)
-      : streamGemini(character, history);
+      ? streamClaude(character, history, memory?.summary)
+      : streamGemini(character, history, memory?.summary);
 
   const encoder = new TextEncoder();
   const body = new ReadableStream({
@@ -90,6 +107,7 @@ export async function POST(request: NextRequest) {
         }
         if (full) await addMessage(character.id, "assistant", full);
         controller.close();
+        after(() => updateMemoryIfNeeded(character));
       } catch (err) {
         controller.error(err);
       }
@@ -103,7 +121,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   const characterId = request.nextUrl.searchParams.get("characterId");
-  const character = characterId && getCharacter(characterId);
+  const character = characterId ? await findCharacter(characterId) : undefined;
   if (!character) {
     return Response.json({ error: "unknown character" }, { status: 404 });
   }
