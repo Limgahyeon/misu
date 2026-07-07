@@ -179,6 +179,26 @@ export default function ChatView({
       });
   }, [character.id, initialMessages]);
 
+  // 다음 방문 때 0초로 보여줄 스냅샷을 저장 (아바타 제외 — 용량 큼)
+  useEffect(() => {
+    if (!loaded || messages.length === 0) return;
+    try {
+      localStorage.setItem(
+        `misu-chat-cache-${character.id}`,
+        JSON.stringify({
+          name: character.name,
+          emoji: character.emoji,
+          gradient: character.gradient,
+          job: character.job,
+          kakao: kakaoMode,
+          messages: messages.slice(-30),
+        })
+      );
+    } catch {
+      /* 저장 공간 부족 등은 무시 */
+    }
+  }, [messages, loaded, kakaoMode, character]);
+
   useEffect(() => {
     if (!loaded) return;
     if (!didInitialScroll.current) {
