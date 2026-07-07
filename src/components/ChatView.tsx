@@ -51,7 +51,7 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [model, setModel] = useState<ModelId>("gemini");
+  const [model, setModel] = useState<ModelId>("haiku");
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [viewportHeight, setViewportHeight] = useState<number>();
@@ -195,7 +195,7 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
       className="fixed inset-x-0 top-0 mx-auto flex w-full max-w-md flex-col"
       style={{ height: viewportHeight ?? "100dvh" }}
     >
-      <header className="flex items-center gap-3 border-b border-white/60 bg-white/60 px-4 py-3 backdrop-blur-md">
+      <header className="relative z-30 flex items-center gap-3 border-b border-white/60 bg-white/60 px-4 py-3 backdrop-blur-md">
         <Link href="/" className="p-1 text-zinc-400 hover:text-zinc-700">
           ←
         </Link>

@@ -29,6 +29,10 @@ const CLAUDE_MODELS: Record<string, string> = {
   opus: "claude-opus-4-7",
 };
 
+// Gemini 무료 한도 초과가 감지되면 한동안 시도 없이 바로 haiku로 직행
+let geminiCooldownUntil = 0;
+const GEMINI_COOLDOWN_MS = 30 * 60 * 1000;
+
 // 지금 대화 흐름과 가장 비슷한 말투 예시 조각을 골라온다
 async function retrieveExamples(
   characterId: string,
@@ -141,31 +145,60 @@ export async function POST(request: NextRequest) {
   const examples = await retrieveExamples(character.id, history);
 
   const claudeModel = CLAUDE_MODELS[model as string];
-  const textStream = claudeModel
-    ? streamClaude(
-        claudeModel,
+  const usingGemini = !claudeModel && Date.now() > geminiCooldownUntil;
+  const textStream = usingGemini
+    ? streamGemini(character, history, memory?.summary, profile, examples)
+    : streamClaude(
+        claudeModel ?? CLAUDE_MODELS.haiku,
         character,
         history,
         memory?.summary,
         profile,
         examples
-      )
-    : streamGemini(character, history, memory?.summary, profile, examples);
+      );
 
   const encoder = new TextEncoder();
   const body = new ReadableStream({
     async start(controller) {
-      try {
-        let full = "";
-        for await (const text of textStream) {
+      let full = "";
+      const pump = async (stream: AsyncIterable<string>) => {
+        for await (const text of stream) {
           full += text;
           controller.enqueue(encoder.encode(text));
+        }
+      };
+      try {
+        try {
+          await pump(textStream);
+        } catch (err) {
+          // Gemini 무료 한도(429) 등으로 실패하면 haiku로 폴백
+          if (full || !usingGemini) throw err;
+          geminiCooldownUntil = Date.now() + GEMINI_COOLDOWN_MS;
+          console.error("gemini failed, falling back to haiku:", err);
+          await pump(
+            streamClaude(
+              CLAUDE_MODELS.haiku,
+              character,
+              history,
+              memory?.summary,
+              profile,
+              examples
+            )
+          );
         }
         if (full) await addMessage(character.id, "assistant", full);
         controller.close();
         after(() => updateMemoryIfNeeded(character));
       } catch (err) {
-        controller.error(err);
+        console.error("chat stream failed:", err);
+        if (!full) {
+          controller.enqueue(
+            encoder.encode(
+              "*(지금 답장이 잘 안 돼요… 잠시 뒤에 다시 말 걸어주세요 🥲)*"
+            )
+          );
+        }
+        controller.close();
       }
     },
   });
