@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
 import { after, NextRequest } from "next/server";
-import { Character } from "@/lib/characters";
 import {
   addMessage,
   getCharacterProfile,
@@ -73,24 +72,11 @@ async function retrieveExamples(
   }
 }
 
-async function* streamGemini(
-  character: Character,
-  history: History,
-  memory?: string,
-  profile?: string,
-  examples?: string,
-  weather?: string
-) {
+async function* streamGemini(system: string, history: History) {
   const stream = await gemini.models.generateContentStream({
     model: "gemini-2.5-flash",
     config: {
-      systemInstruction: buildSystemPrompt(
-        character,
-        memory,
-        profile,
-        examples,
-        weather
-      ),
+      systemInstruction: system,
       maxOutputTokens: 1024,
     },
     contents: history.map((m) => ({
@@ -103,19 +89,11 @@ async function* streamGemini(
   }
 }
 
-async function* streamClaude(
-  model: string,
-  character: Character,
-  history: History,
-  memory?: string,
-  profile?: string,
-  examples?: string,
-  weather?: string
-) {
+async function* streamClaude(model: string, system: string, history: History) {
   const stream = anthropic.messages.stream({
     model,
     max_tokens: 1024,
-    system: buildSystemPrompt(character, memory, profile, examples, weather),
+    system,
     messages: history,
   });
   for await (const event of stream) {
@@ -144,7 +122,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { characterId, message, model } = await request.json();
+  const { characterId, message, model, kakaoMode } = await request.json();
   const character = characterId
     ? await findCharacter(characterId)
     : undefined;
@@ -180,20 +158,20 @@ export async function POST(request: NextRequest) {
   }));
 
   const examples = await retrieveExamples(character.id, history);
+  const system = buildSystemPrompt(
+    character,
+    memory?.summary,
+    profile,
+    examples,
+    weather,
+    !!kakaoMode
+  );
 
   const claudeModel = CLAUDE_MODELS[model as string];
   const usingGemini = !claudeModel && Date.now() > geminiCooldownUntil;
   const textStream = usingGemini
-    ? streamGemini(character, timed, memory?.summary, profile, examples, weather)
-    : streamClaude(
-        claudeModel ?? CLAUDE_MODELS.haiku,
-        character,
-        timed,
-        memory?.summary,
-        profile,
-        examples,
-        weather
-      );
+    ? streamGemini(system, timed)
+    : streamClaude(claudeModel ?? CLAUDE_MODELS.haiku, system, timed);
 
   const encoder = new TextEncoder();
   const body = new ReadableStream({
@@ -213,17 +191,7 @@ export async function POST(request: NextRequest) {
           if (full || !usingGemini) throw err;
           geminiCooldownUntil = Date.now() + GEMINI_COOLDOWN_MS;
           console.error("gemini failed, falling back to haiku:", err);
-          await pump(
-            streamClaude(
-              CLAUDE_MODELS.haiku,
-              character,
-              timed,
-              memory?.summary,
-              profile,
-              examples,
-              weather
-            )
-          );
+          await pump(streamClaude(CLAUDE_MODELS.haiku, system, timed));
         }
         if (full) await addMessage(character.id, "assistant", full);
         controller.close();

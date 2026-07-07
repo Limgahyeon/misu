@@ -16,6 +16,34 @@ interface CharacterInfo {
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  createdAt?: string;
+}
+
+// DB의 UTC 시각("YYYY-MM-DD HH:MM:SS") 또는 ISO 문자열을 Date로
+function parseTime(raw?: string): Date | undefined {
+  if (!raw) return undefined;
+  const iso = raw.includes("T") ? raw : raw.replace(" ", "T") + "Z";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? undefined : d;
+}
+
+function timeLabel(raw?: string): string {
+  const d = parseTime(raw);
+  return d
+    ? d.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" })
+    : "";
+}
+
+function dateLabel(raw?: string): string {
+  const d = parseTime(raw);
+  return d
+    ? d.toLocaleDateString("ko-KR", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        weekday: "long",
+      })
+    : "";
 }
 
 function RichText({ text }: { text: string }) {
@@ -52,6 +80,7 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
   const [sending, setSending] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [model, setModel] = useState<ModelId>("haiku");
+  const [kakaoMode, setKakaoMode] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [viewportHeight, setViewportHeight] = useState<number>();
@@ -100,7 +129,15 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
     const saved = localStorage.getItem("misu-model");
     if (saved === "claude") setModel("sonnet");
     else if (saved && MODEL_IDS.includes(saved)) setModel(saved as ModelId);
-  }, []);
+    setKakaoMode(localStorage.getItem(`misu-kakao-${character.id}`) === "1");
+  }, [character.id]);
+
+  const toggleKakaoMode = useCallback(() => {
+    setKakaoMode((v) => {
+      localStorage.setItem(`misu-kakao-${character.id}`, v ? "0" : "1");
+      return !v;
+    });
+  }, [character.id]);
 
   const selectModel = useCallback((id: ModelId) => {
     setModel(id);
@@ -112,10 +149,13 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
       .then((r) => r.json())
       .then((data) => {
         setMessages(
-          (data.messages ?? []).map((m: ChatMessage) => ({
-            role: m.role,
-            content: m.content,
-          }))
+          (data.messages ?? []).map(
+            (m: ChatMessage & { created_at?: string }) => ({
+              role: m.role,
+              content: m.content,
+              createdAt: m.created_at,
+            })
+          )
         );
         setLoaded(true);
       });
@@ -130,10 +170,11 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
     if (!text || sending) return;
     setInput("");
     setSending(true);
+    const now = new Date().toISOString();
     setMessages((prev) => [
       ...prev,
-      { role: "user", content: text },
-      { role: "assistant", content: "" },
+      { role: "user", content: text, createdAt: now },
+      { role: "assistant", content: "", createdAt: now },
     ]);
 
     try {
@@ -144,6 +185,7 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
           characterId: character.id,
           message: text,
           model,
+          kakaoMode,
         }),
       });
       if (!res.ok || !res.body) throw new Error("request failed");
@@ -158,7 +200,10 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
         const current = acc;
         setMessages((prev) => {
           const next = [...prev];
-          next[next.length - 1] = { role: "assistant", content: current };
+          next[next.length - 1] = {
+            ...next[next.length - 1],
+            content: current,
+          };
           return next;
         });
       }
@@ -166,7 +211,7 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
       setMessages((prev) => {
         const next = [...prev];
         next[next.length - 1] = {
-          role: "assistant",
+          ...next[next.length - 1],
           content: "*연결이 잠시 끊겼다* ...방금 뭐라고 했어? 다시 말해줘.",
         };
         return next;
@@ -174,7 +219,7 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
     } finally {
       setSending(false);
     }
-  }, [input, sending, character.id, model]);
+  }, [input, sending, character.id, model, kakaoMode]);
 
   const reset = useCallback(async () => {
     if (!confirm(`${character.name}와의 대화를 처음부터 다시 시작할까요?`))
@@ -183,10 +228,13 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
     const res = await fetch(`/api/chat?characterId=${character.id}`);
     const data = await res.json();
     setMessages(
-      (data.messages ?? []).map((m: ChatMessage) => ({
-        role: m.role,
-        content: m.content,
-      }))
+      (data.messages ?? []).map(
+        (m: ChatMessage & { created_at?: string }) => ({
+          role: m.role,
+          content: m.content,
+          createdAt: m.created_at,
+        })
+      )
     );
   }, [character.id, character.name]);
 
@@ -246,6 +294,19 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
                   💌 내 정보
                 </button>
                 <button
+                  onClick={toggleKakaoMode}
+                  className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm text-zinc-600 hover:bg-rose-50"
+                >
+                  <span>💬 카톡 모드</span>
+                  <span
+                    className={`text-[11px] font-semibold ${
+                      kakaoMode ? "text-amber-500" : "text-zinc-300"
+                    }`}
+                  >
+                    {kakaoMode ? "ON" : "OFF"}
+                  </span>
+                </button>
+                <button
                   onClick={() => {
                     setMenuOpen(false);
                     reset();
@@ -275,41 +336,86 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
             대화를 불러오는 중...
           </p>
         )}
-        {messages.map((m, i) =>
-          m.role === "user" ? (
-            <div key={i} className="flex justify-end">
-              <div className="max-w-[80%] whitespace-pre-wrap rounded-3xl rounded-br-lg bg-gradient-to-br from-rose-400 to-pink-400 px-4 py-2.5 text-sm leading-relaxed text-white shadow-md shadow-rose-200/60">
-                {m.content}
+        {messages.map((m, i) => {
+          const prev = messages[i - 1];
+          const divider =
+            dateLabel(m.createdAt) &&
+            dateLabel(m.createdAt) !== dateLabel(prev?.createdAt) ? (
+              <div className="flex items-center gap-3 py-2">
+                <div className="h-px flex-1 bg-zinc-200/70" />
+                <span className="text-[11px] text-zinc-400">
+                  {dateLabel(m.createdAt)}
+                </span>
+                <div className="h-px flex-1 bg-zinc-200/70" />
+              </div>
+            ) : null;
+          const time = timeLabel(m.createdAt);
+
+          if (m.role === "user") {
+            return (
+              <div key={i}>
+                {divider}
+                <div className="flex items-end justify-end gap-1.5">
+                  {time && (
+                    <span className="mb-0.5 shrink-0 text-[10px] text-zinc-400">
+                      {time}
+                    </span>
+                  )}
+                  <div className="max-w-[80%] whitespace-pre-wrap rounded-3xl rounded-br-lg bg-gradient-to-br from-rose-400 to-pink-400 px-4 py-2.5 text-sm leading-relaxed text-white shadow-md shadow-rose-200/60">
+                    {m.content}
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          // 카톡 모드면 줄 단위로 나눠 여러 말풍선으로 보여준다
+          const parts =
+            kakaoMode && m.content
+              ? m.content.split(/\n+/).filter((p) => p.trim())
+              : [m.content];
+          return (
+            <div key={i}>
+              {divider}
+              <div className="flex gap-2">
+                <div
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${character.gradient} text-sm`}
+                >
+                  {character.avatar ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={character.avatar}
+                      alt={character.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    character.emoji
+                  )}
+                </div>
+                <div className="flex min-w-0 flex-col gap-1">
+                  {parts.map((part, j) => (
+                    <div key={j} className="flex items-end gap-1.5">
+                      <div className="max-w-full whitespace-pre-wrap rounded-3xl rounded-bl-lg border border-white/70 bg-white/80 px-4 py-2.5 text-sm leading-relaxed text-zinc-700 shadow-sm backdrop-blur">
+                        {part ? (
+                          <RichText text={part} />
+                        ) : (
+                          <span className="inline-block animate-pulse text-zinc-400">
+                            ···
+                          </span>
+                        )}
+                      </div>
+                      {time && j === parts.length - 1 && (
+                        <span className="mb-0.5 shrink-0 text-[10px] text-zinc-400">
+                          {time}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-          ) : (
-            <div key={i} className="flex items-end gap-2">
-              <div
-                className={`flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${character.gradient} text-sm`}
-              >
-                {character.avatar ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={character.avatar}
-                    alt={character.name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  character.emoji
-                )}
-              </div>
-              <div className="max-w-[80%] whitespace-pre-wrap rounded-3xl rounded-bl-lg border border-white/70 bg-white/80 px-4 py-2.5 text-sm leading-relaxed text-zinc-700 shadow-sm backdrop-blur">
-                {m.content ? (
-                  <RichText text={m.content} />
-                ) : (
-                  <span className="inline-block animate-pulse text-zinc-400">
-                    ···
-                  </span>
-                )}
-              </div>
-            </div>
-          )
-        )}
+          );
+        })}
         <div ref={bottomRef} />
       </div>
 
