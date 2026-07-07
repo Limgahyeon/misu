@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { getUserId } from "@/lib/auth";
 import { findCharacter } from "@/lib/resolve";
 import ChatView from "@/components/ChatView";
 
@@ -10,7 +11,10 @@ export default async function ChatPage({
   params: Promise<{ characterId: string }>;
 }) {
   const { characterId } = await params;
-  const character = await findCharacter(characterId);
+  const userId = await getUserId();
+  const character = userId
+    ? await findCharacter(userId, characterId)
+    : undefined;
   if (!character) notFound();
 
   return (

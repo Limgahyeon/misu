@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { getUserIdFromRequest } from "@/lib/auth";
 import { Character, GRADIENTS } from "@/lib/characters";
 import {
   createCustomCharacter,
@@ -8,8 +9,12 @@ import {
   updateCustomCharacter,
 } from "@/lib/db";
 
-export async function GET() {
-  return Response.json({ characters: await getCustomCharacters() });
+export async function GET(request: NextRequest) {
+  const userId = await getUserIdFromRequest(request);
+  if (!userId) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+  return Response.json({ characters: await getCustomCharacters(userId) });
 }
 
 function parseCharacter(
@@ -87,33 +92,45 @@ function parseCharacter(
 }
 
 export async function POST(request: NextRequest) {
+  const userId = await getUserIdFromRequest(request);
+  if (!userId) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
   const parsed = parseCharacter(await request.json());
   if ("error" in parsed) {
     return Response.json({ error: parsed.error }, { status: 400 });
   }
-  const id = await createCustomCharacter(parsed);
+  const id = await createCustomCharacter(userId, parsed);
   return Response.json({ id });
 }
 
 export async function PUT(request: NextRequest) {
+  const userId = await getUserIdFromRequest(request);
+  if (!userId) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
   const body = await request.json();
   const id = body.id;
-  if (typeof id !== "string" || !(await getCustomCharacter(id))) {
+  if (typeof id !== "string" || !(await getCustomCharacter(userId, id))) {
     return Response.json({ error: "unknown character" }, { status: 404 });
   }
   const parsed = parseCharacter(body);
   if ("error" in parsed) {
     return Response.json({ error: parsed.error }, { status: 400 });
   }
-  await updateCustomCharacter(id, parsed);
+  await updateCustomCharacter(userId, id, parsed);
   return Response.json({ id });
 }
 
 export async function DELETE(request: NextRequest) {
+  const userId = await getUserIdFromRequest(request);
+  if (!userId) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
   const id = request.nextUrl.searchParams.get("id");
-  if (!id || !(await getCustomCharacter(id))) {
+  if (!id || !(await getCustomCharacter(userId, id))) {
     return Response.json({ error: "unknown character" }, { status: 404 });
   }
-  await deleteCustomCharacter(id);
+  await deleteCustomCharacter(userId, id);
   return Response.json({ ok: true });
 }

@@ -13,9 +13,12 @@ export interface PushPayload {
   url?: string; // 알림 탭 시 열 경로 (예: /chat/seoyul)
 }
 
-// 등록된 모든 기기로 발송. 만료된 구독(410/404)은 정리한다.
-export async function sendPushToAll(payload: PushPayload): Promise<number> {
-  const subs = await getPushSubscriptions();
+// 해당 유저의 모든 기기로 발송. 만료된 구독(410/404)은 정리한다.
+export async function sendPushToUser(
+  userId: number,
+  payload: PushPayload
+): Promise<number> {
+  const subs = await getPushSubscriptions(userId);
   let sent = 0;
   await Promise.all(
     subs.map(async (row) => {

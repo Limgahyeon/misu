@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
 import { NextRequest } from "next/server";
+import { getUserIdFromRequest } from "@/lib/auth";
 import { addSnippets } from "@/lib/db";
 import { embed } from "@/lib/embedding";
 import { findCharacter } from "@/lib/resolve";
@@ -86,6 +87,10 @@ function chunk(text: string): string[] {
 }
 
 export async function POST(request: NextRequest) {
+  const userId = await getUserIdFromRequest(request);
+  if (!userId) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
   const { image, characterId } = await request.json();
   const match =
     typeof image === "string" && image.length < 3_000_000
@@ -107,7 +112,10 @@ export async function POST(request: NextRequest) {
   }
 
   // 캐릭터가 지정되면 말투 예시 저장소에 쌓는다 (임베딩과 함께)
-  if (typeof characterId === "string" && (await findCharacter(characterId))) {
+  if (
+    typeof characterId === "string" &&
+    (await findCharacter(userId, characterId))
+  ) {
     try {
       const chunks = chunk(text);
       const vectors = await embed(chunks);

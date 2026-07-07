@@ -1,25 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-
-async function sha256(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(text)
-  );
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+import { sha256, signUserCookie, USER_COOKIE } from "@/lib/auth";
+import { findUserByCodeHash } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   const { code } = await request.json();
-  const accessCode = process.env.ACCESS_CODE;
-
-  if (!accessCode || typeof code !== "string" || code !== accessCode) {
+  if (typeof code !== "string" || !code.trim()) {
     return NextResponse.json({ error: "wrong code" }, { status: 401 });
   }
 
-  const response = NextResponse.json({ ok: true });
-  response.cookies.set("misu-access", await sha256(accessCode), {
+  const user = await findUserByCodeHash(await sha256(code.trim()));
+  if (!user) {
+    return NextResponse.json({ error: "wrong code" }, { status: 401 });
+  }
+
+  const response = NextResponse.json({ ok: true, name: user.name });
+  response.cookies.set(USER_COOKIE, await signUserCookie(user.id), {
     httpOnly: true,
     secure: true,
     sameSite: "lax",

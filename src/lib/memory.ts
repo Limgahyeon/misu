@@ -40,11 +40,12 @@ async function summarize(prompt: string): Promise<string | undefined> {
 }
 
 export async function updateMemoryIfNeeded(
+  userId: number,
   character: Character
 ): Promise<void> {
   const [messages, memory] = await Promise.all([
-    getMessages(character.id),
-    getMemory(character.id),
+    getMessages(userId, character.id),
+    getMemory(userId, character.id),
   ]);
 
   const lastSummarizedId = memory?.last_message_id ?? 0;
@@ -77,6 +78,7 @@ ${transcript}
   const summary = await summarize(prompt);
   if (summary) {
     await saveMemory(
+      userId,
       character.id,
       summary,
       toSummarize[toSummarize.length - 1].id

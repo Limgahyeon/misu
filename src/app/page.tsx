@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getUserId } from "@/lib/auth";
 import { Character, characters } from "@/lib/characters";
 import { getCustomCharacters } from "@/lib/db";
 import DeleteCharacterButton from "@/components/DeleteCharacterButton";
@@ -63,7 +64,8 @@ function CharacterCard({ c }: { c: Character }) {
 }
 
 export default async function Home() {
-  const custom = await getCustomCharacters();
+  const userId = (await getUserId()) ?? 0;
+  const custom = userId ? await getCustomCharacters(userId) : [];
   const themis = custom.filter((c) => c.category === "themis");
   const others = custom.filter((c) => c.category !== "themis");
 

@@ -1,18 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-
-async function sha256(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(text)
-  );
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+import { USER_COOKIE, verifyUserCookie } from "./lib/auth";
 
 export async function proxy(request: NextRequest) {
-  const accessCode = process.env.ACCESS_CODE;
-  if (!accessCode) return NextResponse.next();
+  if (!process.env.AUTH_SECRET) return NextResponse.next();
 
   const { pathname } = request.nextUrl;
   if (
@@ -28,10 +18,10 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const cookie = request.cookies.get("misu-access")?.value;
-  if (cookie === (await sha256(accessCode))) {
-    return NextResponse.next();
-  }
+  const userId = await verifyUserCookie(
+    request.cookies.get(USER_COOKIE)?.value
+  );
+  if (userId) return NextResponse.next();
 
   if (pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

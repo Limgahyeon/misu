@@ -6,22 +6,23 @@ import {
   addMessage,
   clearIcsAppointments,
   getChatList,
+  getCharacterProfile,
   getMemory,
+  getProfile,
   getRecentMessages,
   getSetting,
   getUpcomingAppointments,
+  listUsers,
   markReminded,
   saveSetting,
-  getCharacterProfile,
-  getProfile,
 } from "./db";
-import { sendPushToAll } from "./push";
+import { sendPushToUser } from "./push";
 import { findCharacter } from "./resolve";
 import { stripTimeMeta } from "./text";
 
 const anthropic = new Anthropic();
 
-// 하루 최대 선톡 횟수 — 설정(proactive_per_day)으로 조절, 기본 3
+// 하루 최대 선톡 횟수 — 유저 설정(proactive_per_day)으로 조절, 기본 3
 const DEFAULT_PER_DAY = 3;
 // 선톡을 보낼 수 있는 KST 시간대 (아침~밤, 새벽 제외)
 const ACTIVE_HOURS_KST: [number, number] = [9, 23];
@@ -41,11 +42,11 @@ async function generateShort(system: string, ask: string): Promise<string> {
   return block?.type === "text" ? stripTimeMeta(block.text.trim()) : "";
 }
 
-// 가장 최근에 대화한 캐릭터 = 지금의 '남친 겸 매니저'
-async function currentPartner(): Promise<Character | undefined> {
-  const list = await getChatList();
+// 유저가 가장 최근에 대화한 캐릭터 = 그 유저의 '남친 겸 매니저'
+async function currentPartner(userId: number): Promise<Character | undefined> {
+  const list = await getChatList(userId);
   for (const row of list) {
-    const c = await findCharacter(row.character_id);
+    const c = await findCharacter(userId, row.character_id);
     if (c) return c;
   }
   return undefined;
@@ -64,6 +65,7 @@ const TIME_HINT =
   /(\d{1,2}\s*시|\d{1,2}:\d{2}|내일|모레|글피|오늘|이번\s*주|다음\s*주|약속|예약|미팅|회의|면접|월요일|화요일|수요일|목요일|금요일|토요일|일요일|주말|오전|오후|저녁|아침|점심|밤)/;
 
 export async function extractAppointmentIfAny(
+  userId: number,
   userMessage: string
 ): Promise<void> {
   if (!TIME_HINT.test(userMessage)) return;
@@ -96,6 +98,7 @@ export async function extractAppointmentIfAny(
       const utc = new Date(`${it.datetime.replace(" ", "T")}:00+09:00`);
       if (isNaN(utc.getTime()) || utc.getTime() < Date.now()) continue;
       await addAppointment(
+        userId,
         it.title,
         utc.toISOString().slice(0, 19).replace("T", " "),
         "chat"
@@ -107,28 +110,28 @@ export async function extractAppointmentIfAny(
 }
 
 // ICS 캘린더 동기화 — 앞으로 7일치 일정을 appointments에 반영
-export async function syncCalendar(): Promise<void> {
-  const url = await getSetting("ics_url");
+async function syncCalendarForUser(userId: number): Promise<void> {
+  const url = await getSetting(userId, "ics_url");
   if (!url) return;
   try {
     const events = await fetchIcsEvents(url);
     const now = Date.now();
     const week = now + 7 * 24 * 60 * 60 * 1000;
-    await clearIcsAppointments();
+    await clearIcsAppointments(userId);
     for (const e of events) {
       const t = new Date(e.at.replace(" ", "T") + "Z").getTime();
       if (t > now && t < week) {
-        await addAppointment(e.title, e.at, "ics");
+        await addAppointment(userId, e.title, e.at, "ics");
       }
     }
   } catch (err) {
-    console.error("calendar sync failed:", err);
+    console.error(`calendar sync failed (user ${userId}):`, err);
   }
 }
 
 // 다가온 일정 리마인더 — 30분 전 알림
-export async function checkReminders(): Promise<number> {
-  const upcoming = await getUpcomingAppointments(2);
+async function checkRemindersForUser(userId: number): Promise<number> {
+  const upcoming = await getUpcomingAppointments(userId, 2);
   let sent = 0;
   for (const a of upcoming) {
     if (a.reminded_at) continue;
@@ -137,12 +140,14 @@ export async function checkReminders(): Promise<number> {
     );
     if (minutesLeft > REMIND_BEFORE_MIN) continue;
 
-    const partner = await currentPartner();
+    const partner = await currentPartner(userId);
     let text = `곧 "${a.title}" 시간이야! ${minutesLeft}분 남았어. 준비됐어?`;
     if (partner) {
       const [profile, memory] = await Promise.all([
-        getCharacterProfile(partner.id).then(async (p) => p ?? (await getProfile())),
-        getMemory(partner.id),
+        getCharacterProfile(userId, partner.id).then(
+          async (p) => p ?? (await getProfile(userId))
+        ),
+        getMemory(userId, partner.id),
       ]);
       try {
         const generated = await generateShort(
@@ -151,7 +156,7 @@ export async function checkReminders(): Promise<number> {
         );
         if (generated) {
           text = generated;
-          await addMessage(partner.id, "assistant", generated);
+          await addMessage(userId, partner.id, "assistant", generated);
         }
       } catch (err) {
         console.error("reminder generation failed:", err);
@@ -159,7 +164,7 @@ export async function checkReminders(): Promise<number> {
     }
 
     await markReminded(a.id);
-    await sendPushToAll({
+    await sendPushToUser(userId, {
       title: partner ? partner.name : "misu",
       body: text.split("\n")[0].slice(0, 120),
       url: partner ? `/chat/${partner.id}` : "/",
@@ -170,8 +175,8 @@ export async function checkReminders(): Promise<number> {
 }
 
 // 선톡 — 활동 시간대에, 유저가 조용할 때, 하루 한도 내에서 확률적으로
-export async function maybeProactive(force = false): Promise<boolean> {
-  const partner = await currentPartner();
+async function maybeProactiveForUser(userId: number): Promise<boolean> {
+  const partner = await currentPartner(userId);
   if (!partner) return false;
 
   const kstHour = Number(
@@ -181,34 +186,40 @@ export async function maybeProactive(force = false): Promise<boolean> {
       hour12: false,
     })
   );
-  if (!force && (kstHour < ACTIVE_HOURS_KST[0] || kstHour >= ACTIVE_HOURS_KST[1])) {
+  if (kstHour < ACTIVE_HOURS_KST[0] || kstHour >= ACTIVE_HOURS_KST[1]) {
     return false;
   }
 
   // 하루 한도 체크 (KST 날짜 기준)
-  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
-  const stampRaw = await getSetting("proactive_stamp");
+  const today = new Date().toLocaleDateString("sv-SE", {
+    timeZone: "Asia/Seoul",
+  });
+  const stampRaw = await getSetting(userId, "proactive_stamp");
   const [stampDay, stampCount] = (stampRaw ?? "|0").split("|");
   const count = stampDay === today ? Number(stampCount) || 0 : 0;
-  const perDay = Number(await getSetting("proactive_per_day")) || DEFAULT_PER_DAY;
-  if (!force && count >= perDay) return false;
+  const perDay =
+    Number(await getSetting(userId, "proactive_per_day")) || DEFAULT_PER_DAY;
+  if (count >= perDay) return false;
 
   // 유저가 방금까지 대화 중이었으면 조용히
-  const recent = await getRecentMessages(partner.id, 1);
+  const recent = await getRecentMessages(userId, partner.id, 1);
   const last = recent[0];
-  if (!force && last) {
+  if (last) {
     const idleMin =
-      (Date.now() - new Date(last.created_at.replace(" ", "T") + "Z").getTime()) /
+      (Date.now() -
+        new Date(last.created_at.replace(" ", "T") + "Z").getTime()) /
       60000;
     if (idleMin < IDLE_MINUTES) return false;
   }
-  // 확률적으로 보낸다 (매 시간 호출돼도 하루 2~3번 수준이 되도록)
-  if (!force && Math.random() > 0.25) return false;
+  // 확률적으로 보낸다 (자주 호출돼도 하루 2~3번 수준이 되도록)
+  if (Math.random() > 0.25) return false;
 
   const [profile, memory, todaySchedule] = await Promise.all([
-    getCharacterProfile(partner.id).then(async (p) => p ?? (await getProfile())),
-    getMemory(partner.id),
-    getUpcomingAppointments(16),
+    getCharacterProfile(userId, partner.id).then(
+      async (p) => p ?? (await getProfile(userId))
+    ),
+    getMemory(userId, partner.id),
+    getUpcomingAppointments(userId, 16),
   ]);
 
   const scheduleNote =
@@ -234,9 +245,9 @@ export async function maybeProactive(force = false): Promise<boolean> {
     );
     if (!text) return false;
 
-    await addMessage(partner.id, "assistant", text);
-    await saveSetting("proactive_stamp", `${today}|${count + 1}`);
-    await sendPushToAll({
+    await addMessage(userId, partner.id, "assistant", text);
+    await saveSetting(userId, "proactive_stamp", `${today}|${count + 1}`);
+    await sendPushToUser(userId, {
       title: partner.name,
       body: text.split("\n")[0].slice(0, 120),
       url: `/chat/${partner.id}`,
@@ -246,4 +257,19 @@ export async function maybeProactive(force = false): Promise<boolean> {
     console.error("proactive failed:", err);
     return false;
   }
+}
+
+// 하트비트 — 전체 유저를 순회하며 캘린더 동기화 / 리마인더 / 선톡 처리
+export async function runHeartbeat(
+  wantProactive: boolean
+): Promise<{ reminders: number; proactive: number }> {
+  const users = await listUsers();
+  let reminders = 0;
+  let proactive = 0;
+  for (const user of users) {
+    await syncCalendarForUser(user.id);
+    reminders += await checkRemindersForUser(user.id);
+    if (wantProactive && (await maybeProactiveForUser(user.id))) proactive++;
+  }
+  return { reminders, proactive };
 }

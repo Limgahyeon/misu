@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
 import { after, NextRequest } from "next/server";
+import { getUserIdFromRequest } from "@/lib/auth";
 import {
   addMessage,
   getCharacterProfile,
@@ -105,30 +106,40 @@ async function* streamClaude(model: string, system: string, history: History) {
 }
 
 export async function GET(request: NextRequest) {
+  const userId = await getUserIdFromRequest(request);
+  if (!userId) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
   const characterId = request.nextUrl.searchParams.get("characterId");
-  const character = characterId ? await findCharacter(characterId) : undefined;
+  const character = characterId
+    ? await findCharacter(userId, characterId)
+    : undefined;
   if (!character) {
     return Response.json({ error: "unknown character" }, { status: 404 });
   }
 
-  let messages = await getMessages(character.id);
+  let messages = await getMessages(userId, character.id);
   if (messages.length === 0) {
-    await addMessage(character.id, "assistant", character.firstScene);
-    messages = await getMessages(character.id);
+    await addMessage(userId, character.id, "assistant", character.firstScene);
+    messages = await getMessages(userId, character.id);
   }
   return Response.json({ messages });
 }
 
 export async function POST(request: NextRequest) {
+  const userId = await getUserIdFromRequest(request);
+  if (!userId) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
   const { characterId, message, model, kakaoMode } = await request.json();
   const character = characterId
-    ? await findCharacter(characterId)
+    ? await findCharacter(userId, characterId)
     : undefined;
   if (!character || typeof message !== "string" || !message.trim()) {
     return Response.json({ error: "invalid request" }, { status: 400 });
   }
 
-  await addMessage(character.id, "user", message.trim());
+  await addMessage(userId, character.id, "user", message.trim());
 
   // IP 기반 위치 (Vercel 헤더). 로컬 dev 등 헤더가 없으면 서울로 폴백
   const lat = request.headers.get("x-vercel-ip-latitude") ?? "37.5665";
@@ -138,10 +149,10 @@ export async function POST(request: NextRequest) {
 
   // 필요한 조회를 전부 병렬로 — 캐릭터 전용 유저 인포가 있으면 그걸, 없으면 기본 내 정보
   const [messages, memory, profile, weather, examples] = await Promise.all([
-    getRecentMessages(character.id, HISTORY_LIMIT + 20),
-    getMemory(character.id),
-    getCharacterProfile(character.id).then(
-      async (p) => p ?? (await getProfile())
+    getRecentMessages(userId, character.id, HISTORY_LIMIT + 20),
+    getMemory(userId, character.id),
+    getCharacterProfile(userId, character.id).then(
+      async (p) => p ?? (await getProfile(userId))
     ),
     getWeather(lat, lon, city),
     retrieveExamples(character.id, message.trim()),
@@ -194,13 +205,13 @@ export async function POST(request: NextRequest) {
           await pump(streamClaude(CLAUDE_MODELS.haiku, system, timed));
         }
         if (full) {
-          await addMessage(character.id, "assistant", stripTimeMeta(full));
+          await addMessage(userId, character.id, "assistant", stripTimeMeta(full));
         }
         controller.close();
         after(() =>
           Promise.all([
-            updateMemoryIfNeeded(character),
-            extractAppointmentIfAny(message.trim()),
+            updateMemoryIfNeeded(userId, character),
+            extractAppointmentIfAny(userId, message.trim()),
           ])
         );
       } catch (err) {
@@ -223,11 +234,17 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const userId = await getUserIdFromRequest(request);
+  if (!userId) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
   const characterId = request.nextUrl.searchParams.get("characterId");
-  const character = characterId ? await findCharacter(characterId) : undefined;
+  const character = characterId
+    ? await findCharacter(userId, characterId)
+    : undefined;
   if (!character) {
     return Response.json({ error: "unknown character" }, { status: 404 });
   }
-  await resetConversation(character.id);
+  await resetConversation(userId, character.id);
   return Response.json({ ok: true });
 }

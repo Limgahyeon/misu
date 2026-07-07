@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getUserId } from "@/lib/auth";
 import { characters } from "@/lib/characters";
 import { getChatList, getCustomCharacters } from "@/lib/db";
 import TabBar from "@/components/TabBar";
@@ -31,10 +32,10 @@ function preview(content: string): string {
 }
 
 export default async function ChatsPage() {
-  const [rows, custom] = await Promise.all([
-    getChatList(),
-    getCustomCharacters(),
-  ]);
+  const userId = (await getUserId()) ?? 0;
+  const [rows, custom] = userId
+    ? await Promise.all([getChatList(userId), getCustomCharacters(userId)])
+    : [[], []];
   const byId = new Map([...custom, ...characters].map((c) => [c.id, c]));
   const items = rows.flatMap((r) => {
     const c = byId.get(r.character_id);
