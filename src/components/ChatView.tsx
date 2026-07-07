@@ -84,8 +84,15 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [viewportHeight, setViewportHeight] = useState<number>();
+  // 카톡 모드에서 마지막 답장을 말풍선 단위로 순차 등장시키기 위한 카운터
+  const [revealed, setRevealed] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const coarsePointer = useRef(false);
+  const didInitialScroll = useRef(false);
+  // 이번 세션에서 전송한 뒤 도착하는 답장에만 순차 등장을 적용
+  const liveReveal = useRef(false);
 
   // 키보드 애니메이션이 끝날 때까지 여러 번 바닥으로 스크롤해서 마지막 메시지를 보이게 유지
   const stickToBottom = useCallback(() => {
@@ -130,6 +137,8 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
     if (saved === "claude" || saved === "opus") setModel("sonnet");
     else if (saved && MODEL_IDS.includes(saved)) setModel(saved as ModelId);
     setKakaoMode(localStorage.getItem(`misu-kakao-${character.id}`) === "1");
+    // 터치 기기면 엔터 = 줄바꿈, 전송은 버튼 (카톡과 동일)
+    coarsePointer.current = window.matchMedia("(pointer: coarse)").matches;
   }, [character.id]);
 
   const toggleKakaoMode = useCallback(() => {
@@ -162,14 +171,24 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
   }, [character.id]);
 
   useEffect(() => {
+    if (!loaded) return;
+    if (!didInitialScroll.current) {
+      // 처음 입장은 카톡처럼 바로 최근 메시지에서 시작
+      didInitialScroll.current = true;
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+      return;
+    }
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, loaded, revealed]);
 
   const send = useCallback(async () => {
     const text = input.trim();
     if (!text || sending) return;
     setInput("");
     setSending(true);
+    setRevealed(0);
+    liveReveal.current = true;
     const now = new Date().toISOString();
     setMessages((prev) => [
       ...prev,
@@ -218,8 +237,27 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
       });
     } finally {
       setSending(false);
+      textareaRef.current?.focus();
     }
   }, [input, sending, character.id, model, kakaoMode]);
+
+  // 카톡 모드: 이번 세션에서 받는 답장만 말풍선 단위로 텀을 두고 등장시킨다
+  const lastMsg = messages[messages.length - 1];
+  useEffect(() => {
+    if (!kakaoMode || !liveReveal.current || lastMsg?.role !== "assistant")
+      return;
+    const parts = stripTimeMeta(lastMsg.content)
+      .split(/\n+/)
+      .filter((p) => p.trim());
+    // 스트리밍 중엔 마지막 줄이 미완성일 수 있으니 제외
+    const available = sending ? Math.max(0, parts.length - 1) : parts.length;
+    if (revealed >= available) return;
+    const t = setTimeout(
+      () => setRevealed((r) => r + 1),
+      revealed === 0 ? 250 : 700
+    );
+    return () => clearTimeout(t);
+  }, [kakaoMode, lastMsg, sending, revealed]);
 
   const reset = useCallback(async () => {
     if (!confirm(`${character.name}와의 대화를 처음부터 다시 시작할까요?`))
@@ -371,10 +409,17 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
 
           // 시각 메타데이터가 새어 나온 과거 메시지 정리 + 카톡 모드면 줄 단위 분할
           const clean = stripTimeMeta(m.content);
-          const parts =
+          const allParts =
             kakaoMode && clean
               ? clean.split(/\n+/).filter((p) => p.trim())
               : [clean];
+          // 이번에 도착 중인 답장은 revealed 개수만큼만 보여주고 나머지는 타이핑 표시
+          const isLive =
+            kakaoMode && liveReveal.current && i === messages.length - 1;
+          const parts = isLive ? allParts.slice(0, revealed) : allParts;
+          const typing =
+            isLive && (sending || revealed < allParts.length);
+          const complete = !typing && parts.length === allParts.length;
           return (
             <div key={i}>
               {divider}
@@ -394,8 +439,14 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
                   )}
                 </div>
                 <div className="flex min-w-0 flex-col gap-1">
+                  <span className="px-1 text-[11px] text-zinc-500">
+                    {character.name}
+                  </span>
                   {parts.map((part, j) => (
-                    <div key={j} className="flex items-end gap-1.5">
+                    <div
+                      key={j}
+                      className={`flex items-end gap-1.5 ${isLive ? "msg-pop" : ""}`}
+                    >
                       <div className="max-w-full whitespace-pre-wrap rounded-3xl rounded-bl-lg border border-white/70 bg-white/80 px-4 py-2.5 text-sm leading-relaxed text-zinc-700 shadow-sm backdrop-blur">
                         {part ? (
                           <RichText text={part} />
@@ -405,13 +456,22 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
                           </span>
                         )}
                       </div>
-                      {time && j === parts.length - 1 && (
+                      {time && complete && j === parts.length - 1 && (
                         <span className="mb-0.5 shrink-0 text-[10px] text-zinc-400">
                           {time}
                         </span>
                       )}
                     </div>
                   ))}
+                  {typing && (
+                    <div className="msg-pop flex items-end">
+                      <div className="rounded-3xl rounded-bl-lg border border-white/70 bg-white/80 px-4 py-2.5 text-sm shadow-sm backdrop-blur">
+                        <span className="inline-block animate-pulse text-zinc-400">
+                          ···
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -449,22 +509,30 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
         className="flex items-end gap-2 bg-white/60 px-4 py-3 backdrop-blur-md"
       >
         <textarea
+          ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onFocus={stickToBottom}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            // PC: 엔터 = 전송, Shift+엔터 = 줄바꿈 / 모바일: 엔터 = 줄바꿈 (카톡과 동일)
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey &&
+              !e.nativeEvent.isComposing &&
+              !coarsePointer.current
+            ) {
               e.preventDefault();
               send();
             }
           }}
           rows={1}
-          placeholder={`${character.name}에게 메시지 보내기`}
+          placeholder="메시지 입력"
           className="max-h-32 flex-1 resize-none rounded-2xl border border-rose-100 bg-white/90 px-4 py-2.5 text-sm text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-rose-300"
         />
         <button
           type="submit"
           disabled={sending || !input.trim()}
+          onPointerDown={(e) => e.preventDefault()}
           className="rounded-2xl bg-gradient-to-r from-rose-400 to-pink-400 px-4 py-2.5 text-sm font-medium text-white shadow-md shadow-rose-200/60 transition-opacity disabled:opacity-40"
         >
           전송

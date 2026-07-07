@@ -6,9 +6,8 @@ import {
   addMessage,
   clearIcsAppointments,
   getChatList,
-  getCharacterProfile,
+  getEffectiveProfile,
   getMemory,
-  getProfile,
   getRecentMessages,
   getSetting,
   getUpcomingAppointments,
@@ -144,9 +143,7 @@ async function checkRemindersForUser(userId: number): Promise<number> {
     let text = `곧 "${a.title}" 시간이야! ${minutesLeft}분 남았어. 준비됐어?`;
     if (partner) {
       const [profile, memory] = await Promise.all([
-        getCharacterProfile(userId, partner.id).then(
-          async (p) => p ?? (await getProfile(userId))
-        ),
+        getEffectiveProfile(userId, partner.id),
         getMemory(userId, partner.id),
       ]);
       try {
@@ -222,9 +219,7 @@ async function maybeProactiveForUser(
   if (Math.random() > p) return false;
 
   const [profile, memory, todaySchedule] = await Promise.all([
-    getCharacterProfile(userId, partner.id).then(
-      async (p) => p ?? (await getProfile(userId))
-    ),
+    getEffectiveProfile(userId, partner.id),
     getMemory(userId, partner.id),
     getUpcomingAppointments(userId, 16),
   ]);

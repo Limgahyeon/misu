@@ -40,6 +40,7 @@ ${allExamples}
 
   const nowKst = new Date().toLocaleString("ko-KR", {
     timeZone: "Asia/Seoul",
+    year: "numeric",
     month: "long",
     day: "numeric",
     weekday: "long",

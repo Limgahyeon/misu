@@ -4,10 +4,9 @@ import { after, NextRequest } from "next/server";
 import { getUserIdFromRequest } from "@/lib/auth";
 import {
   addMessage,
-  getCharacterProfile,
+  getEffectiveProfile,
   getMemory,
   getMessages,
-  getProfile,
   getRecentMessages,
   getSnippets,
   resetConversation,
@@ -31,6 +30,7 @@ type History = { role: "user" | "assistant"; content: string }[];
 function formatKst(createdAt: string): string {
   return new Date(createdAt.replace(" ", "T") + "Z").toLocaleString("ko-KR", {
     timeZone: "Asia/Seoul",
+    year: "numeric",
     month: "numeric",
     day: "numeric",
     hour: "numeric",
@@ -147,13 +147,11 @@ export async function POST(request: NextRequest) {
   const rawCity = request.headers.get("x-vercel-ip-city");
   const city = rawCity ? decodeURIComponent(rawCity) : undefined;
 
-  // 필요한 조회를 전부 병렬로 — 캐릭터 전용 유저 인포가 있으면 그걸, 없으면 기본 내 정보
+  // 필요한 조회를 전부 병렬로 — 유저 인포는 이름 + 캐릭터별(없으면 기본)
   const [messages, memory, profile, weather, examples] = await Promise.all([
     getRecentMessages(userId, character.id, HISTORY_LIMIT + 20),
     getMemory(userId, character.id),
-    getCharacterProfile(userId, character.id).then(
-      async (p) => p ?? (await getProfile(userId))
-    ),
+    getEffectiveProfile(userId, character.id),
     getWeather(lat, lon, city),
     retrieveExamples(character.id, message.trim()),
   ]);

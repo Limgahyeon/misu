@@ -22,6 +22,7 @@ export default function ProfileModal({
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [icsUrl, setIcsUrl] = useState("");
+  const [userName, setUserName] = useState("");
   const [pushState, setPushState] = useState<"unknown" | "on" | "off" | "unsupported">(
     "unknown"
   );
@@ -38,7 +39,10 @@ export default function ProfileModal({
     if (!characterId) {
       fetch("/api/settings")
         .then((r) => r.json())
-        .then((data) => setIcsUrl(data.ics_url ?? ""));
+        .then((data) => {
+          setIcsUrl(data.ics_url ?? "");
+          setUserName(data.user_name ?? "");
+        });
       if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
         setPushState("unsupported");
       } else {
@@ -103,7 +107,7 @@ export default function ProfileModal({
       await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ics_url: icsUrl }),
+        body: JSON.stringify({ ics_url: icsUrl, user_name: userName }),
       });
     }
     onClose();
@@ -126,6 +130,16 @@ export default function ProfileModal({
             ? "이 캐릭터와의 대화에서만 쓰는 내 설정이에요. 비워두면 기본 내 정보를 써요."
             : "여기 적은 내용을 그가 기억하고 대화에 반영해요."}
         </p>
+        {!characterId && (
+          <input
+            value={userName}
+            onChange={(e) => setUserName(e.target.value)}
+            maxLength={30}
+            disabled={!loaded}
+            placeholder="이름 (그가 이렇게 불러요 — 예: 지은, 자기야)"
+            className="mt-3 w-full rounded-2xl border border-rose-100 bg-white px-4 py-3 text-sm text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-rose-300"
+          />
+        )}
         <textarea
           value={profile}
           onChange={(e) => setProfile(e.target.value)}
@@ -137,7 +151,7 @@ export default function ProfileModal({
               ? fallback
                 ? `비워두면 기본 내 정보를 사용:\n${fallback.slice(0, 120)}`
                 : "예)\n이름/호칭: 지은\n역할: MUSE 소속 B급 가이드\n관계: 결속 파트너 후보로 배정됨"
-              : "예)\n이름/호칭: 지은 (지은아 라고 불러줘)\n나이: 26세, 마케터\n좋아하는 것: 매운 음식, 고양이, 발라드\n요즘 고민: 이직 준비 중"
+              : "예)\n나이: 26세, 마케터\n좋아하는 것: 매운 음식, 고양이, 발라드\n요즘 고민: 이직 준비 중"
           }
           className="mt-3 w-full resize-none rounded-2xl border border-rose-100 bg-white px-4 py-3 text-sm text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-rose-300"
         />

@@ -4,3 +4,18 @@ body {
   font-family: "Pretendard Variable", Pretendard, -apple-system,
     BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
 }
+
+/* 카톡처럼 말풍선이 뿅 하고 등장 */
+@keyframes msg-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.msg-pop {
+  animation: msg-pop 0.22s ease-out;
+}

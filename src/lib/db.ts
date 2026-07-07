@@ -461,6 +461,25 @@ export async function saveProfile(
   });
 }
 
+// 프롬프트에 넣을 최종 유저 인포 — 이름(항상 이 호칭으로) + 캐릭터별 인포(없으면 기본 내 정보)
+export async function getEffectiveProfile(
+  userId: number,
+  characterId?: string
+): Promise<string | undefined> {
+  const [name, charP] = await Promise.all([
+    getSetting(userId, "user_name"),
+    characterId
+      ? getCharacterProfile(userId, characterId)
+      : Promise.resolve(undefined),
+  ]);
+  const body = charP ?? (await getProfile(userId));
+  const parts = [
+    name ? `이름/호칭: ${name} — 유저를 항상 이 이름으로 부른다.` : undefined,
+    body,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join("\n") : undefined;
+}
+
 // --- 캐릭터별 유저 인포 (이 채팅에서만 쓰는 '나' 설정) ---
 
 export async function getCharacterProfile(
