@@ -80,6 +80,7 @@ function CreateForm() {
   const editId = useSearchParams().get("edit");
   const [concept, setConcept] = useState("");
   const [form, setForm] = useState(EMPTY);
+  const [isThemis, setIsThemis] = useState(false);
   const [gradient, setGradient] = useState(GRADIENTS[1]);
   const [avatar, setAvatar] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -166,6 +167,7 @@ function CreateForm() {
         });
         setGradient(c.gradient);
         setAvatar(c.avatar ?? "");
+        setIsThemis(c.category === "themis");
       });
     loadSnippets(editId);
   }, [editId]);
@@ -218,6 +220,7 @@ function CreateForm() {
           age: Number(form.age),
           gradient,
           avatar: avatar || undefined,
+          category: isThemis ? "themis" : undefined,
         }),
       });
       const data = await res.json();
@@ -413,6 +416,38 @@ function CreateForm() {
             </div>
           )}
         </div>
+
+        <button
+          type="button"
+          onClick={() => setIsThemis((v) => !v)}
+          className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition-colors ${
+            isThemis
+              ? "border-indigo-300 bg-indigo-50/70"
+              : "border-zinc-200 bg-white/60 hover:border-indigo-200"
+          }`}
+        >
+          <span>
+            <span
+              className={`text-sm font-semibold ${isThemis ? "text-indigo-600" : "text-zinc-600"}`}
+            >
+              ⚡ THEMIS 세계관 캐릭터
+            </span>
+            <span className="mt-0.5 block text-[11px] text-zinc-400">
+              센티넬 × 가이드 세계관 설정이 대화에 자동 적용돼요
+            </span>
+          </span>
+          <span
+            className={`flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors ${
+              isThemis ? "bg-indigo-400" : "bg-zinc-200"
+            }`}
+          >
+            <span
+              className={`h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                isThemis ? "translate-x-5" : ""
+              }`}
+            />
+          </span>
+        </button>
 
         <div>
           <p className="mb-2 text-xs font-medium text-zinc-500">프로필 색</p>

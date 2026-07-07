@@ -4,6 +4,7 @@ import { after, NextRequest } from "next/server";
 import { Character } from "@/lib/characters";
 import {
   addMessage,
+  getCharacterProfile,
   getMemory,
   getMessages,
   getProfile,
@@ -14,6 +15,7 @@ import { cosine, embed } from "@/lib/embedding";
 import { updateMemoryIfNeeded } from "@/lib/memory";
 import { buildSystemPrompt } from "@/lib/prompt";
 import { findCharacter } from "@/lib/resolve";
+import { getWeather } from "@/lib/weather";
 
 const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const anthropic = new Anthropic();
@@ -21,6 +23,18 @@ const anthropic = new Anthropic();
 const HISTORY_LIMIT = 40;
 
 type History = { role: "user" | "assistant"; content: string }[];
+
+// DB의 UTC 시각("YYYY-MM-DD HH:MM:SS")을 "7/8 23:14" 같은 KST 표기로
+function formatKst(createdAt: string): string {
+  return new Date(createdAt.replace(" ", "T") + "Z").toLocaleString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
 
 const CLAUDE_MODELS: Record<string, string> = {
   claude: "claude-sonnet-4-6", // 이전 버전 클라이언트 호환
@@ -64,12 +78,19 @@ async function* streamGemini(
   history: History,
   memory?: string,
   profile?: string,
-  examples?: string
+  examples?: string,
+  weather?: string
 ) {
   const stream = await gemini.models.generateContentStream({
     model: "gemini-2.5-flash",
     config: {
-      systemInstruction: buildSystemPrompt(character, memory, profile, examples),
+      systemInstruction: buildSystemPrompt(
+        character,
+        memory,
+        profile,
+        examples,
+        weather
+      ),
       maxOutputTokens: 1024,
     },
     contents: history.map((m) => ({
@@ -88,12 +109,13 @@ async function* streamClaude(
   history: History,
   memory?: string,
   profile?: string,
-  examples?: string
+  examples?: string,
+  weather?: string
 ) {
   const stream = anthropic.messages.stream({
     model,
     max_tokens: 1024,
-    system: buildSystemPrompt(character, memory, profile, examples),
+    system: buildSystemPrompt(character, memory, profile, examples, weather),
     messages: history,
   });
   for await (const event of stream) {
@@ -132,29 +154,45 @@ export async function POST(request: NextRequest) {
 
   await addMessage(character.id, "user", message.trim());
 
-  const [messages, memory, profile] = await Promise.all([
+  // IP 기반 위치 (Vercel 헤더). 로컬 dev 등 헤더가 없으면 서울로 폴백
+  const lat = request.headers.get("x-vercel-ip-latitude") ?? "37.5665";
+  const lon = request.headers.get("x-vercel-ip-longitude") ?? "126.978";
+  const rawCity = request.headers.get("x-vercel-ip-city");
+  const city = rawCity ? decodeURIComponent(rawCity) : undefined;
+
+  // 캐릭터 전용 유저 인포가 있으면 그걸 쓰고, 없으면 기본 내 정보
+  const [messages, memory, profile, weather] = await Promise.all([
     getMessages(character.id),
     getMemory(character.id),
-    getProfile(),
+    getCharacterProfile(character.id).then(
+      async (p) => p ?? (await getProfile())
+    ),
+    getWeather(lat, lon, city),
   ]);
-  const history = messages
+  const recent = messages
     .filter((m) => m.id > (memory?.last_message_id ?? 0))
-    .slice(-HISTORY_LIMIT)
-    .map((m) => ({ role: m.role, content: m.content }));
+    .slice(-HISTORY_LIMIT);
+  // 말투 예시 검색용은 원문, 모델에 주는 히스토리에는 보낸 시각 메타데이터를 붙인다
+  const history = recent.map((m) => ({ role: m.role, content: m.content }));
+  const timed = recent.map((m) => ({
+    role: m.role,
+    content: `[${formatKst(m.created_at)}] ${m.content}`,
+  }));
 
   const examples = await retrieveExamples(character.id, history);
 
   const claudeModel = CLAUDE_MODELS[model as string];
   const usingGemini = !claudeModel && Date.now() > geminiCooldownUntil;
   const textStream = usingGemini
-    ? streamGemini(character, history, memory?.summary, profile, examples)
+    ? streamGemini(character, timed, memory?.summary, profile, examples, weather)
     : streamClaude(
         claudeModel ?? CLAUDE_MODELS.haiku,
         character,
-        history,
+        timed,
         memory?.summary,
         profile,
-        examples
+        examples,
+        weather
       );
 
   const encoder = new TextEncoder();
@@ -179,10 +217,11 @@ export async function POST(request: NextRequest) {
             streamClaude(
               CLAUDE_MODELS.haiku,
               character,
-              history,
+              timed,
               memory?.summary,
               profile,
-              examples
+              examples,
+              weather
             )
           );
         }

@@ -61,6 +61,14 @@ function parseCharacter(
     dialogExamples = body.dialogExamples.trim();
   }
 
+  let category: string | undefined;
+  if (body.category != null && body.category !== "") {
+    if (body.category !== "themis") {
+      return { error: "invalid category" };
+    }
+    category = body.category;
+  }
+
   return {
     name: b.name.trim(),
     age,
@@ -74,6 +82,7 @@ function parseCharacter(
     firstScene: b.firstScene.trim(),
     avatar,
     dialogExamples,
+    category,
   };
 }
 

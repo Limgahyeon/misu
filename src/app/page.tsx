@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { characters } from "@/lib/characters";
+import { Character, characters } from "@/lib/characters";
 import { getCustomCharacters } from "@/lib/db";
 import DeleteCharacterButton from "@/components/DeleteCharacterButton";
 import ProfileButton from "@/components/ProfileButton";
@@ -7,8 +7,65 @@ import TabBar from "@/components/TabBar";
 
 export const dynamic = "force-dynamic";
 
+function CharacterCard({ c }: { c: Character }) {
+  const isCustom = c.id.startsWith("c_");
+  return (
+    <li className="relative">
+      <Link
+        href={`/chat/${c.id}`}
+        className="block rounded-3xl border border-white/60 bg-white/70 p-5 shadow-[0_8px_32px_rgba(236,72,153,0.10)] backdrop-blur-md transition-all hover:-translate-y-0.5 hover:bg-white/90 active:scale-[0.99]"
+      >
+        <div className="flex items-center gap-4">
+          <div
+            className={`flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${c.gradient} text-2xl shadow-inner`}
+          >
+            {c.avatar ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={c.avatar}
+                alt={c.name}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              c.emoji
+            )}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-baseline gap-2">
+              <span className="font-semibold text-zinc-800">{c.name}</span>
+              <span className="text-xs text-zinc-400">
+                {c.age}세 · {c.job}
+              </span>
+              {isCustom && c.category !== "themis" && (
+                <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-500">
+                  MY
+                </span>
+              )}
+            </div>
+            <p className="mt-1 truncate text-sm text-zinc-500">{c.tagline}</p>
+          </div>
+        </div>
+      </Link>
+      {isCustom && (
+        <>
+          <Link
+            href={`/create?edit=${c.id}`}
+            aria-label="캐릭터 수정"
+            className="absolute right-11 top-3 flex h-7 w-7 items-center justify-center rounded-full text-zinc-300 transition-colors hover:bg-purple-50 hover:text-purple-400"
+          >
+            ✎
+          </Link>
+          <DeleteCharacterButton id={c.id} name={c.name} />
+        </>
+      )}
+    </li>
+  );
+}
+
 export default async function Home() {
   const custom = await getCustomCharacters();
+  const themis = custom.filter((c) => c.category === "themis");
+  const others = custom.filter((c) => c.category !== "themis");
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-md flex-col px-5 pb-24 pt-10">
@@ -38,65 +95,28 @@ export default async function Home() {
         </p>
       </Link>
 
+      {themis.length > 0 && (
+        <section className="mb-6">
+          <div className="mb-3 flex items-baseline gap-2 px-1">
+            <h2 className="text-sm font-bold tracking-widest text-indigo-500">
+              ⚡ THEMIS
+            </h2>
+            <span className="text-[11px] text-zinc-400">
+              센티넬 × 가이드 세계관
+            </span>
+          </div>
+          <ul className="flex flex-col gap-4">
+            {themis.map((c) => (
+              <CharacterCard key={c.id} c={c} />
+            ))}
+          </ul>
+        </section>
+      )}
+
       <ul className="flex flex-col gap-4">
-        {[...custom, ...characters].map((c) => {
-          const isCustom = c.id.startsWith("c_");
-          return (
-            <li key={c.id} className="relative">
-              <Link
-                href={`/chat/${c.id}`}
-                className="block rounded-3xl border border-white/60 bg-white/70 p-5 shadow-[0_8px_32px_rgba(236,72,153,0.10)] backdrop-blur-md transition-all hover:-translate-y-0.5 hover:bg-white/90 active:scale-[0.99]"
-              >
-                <div className="flex items-center gap-4">
-                  <div
-                    className={`flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${c.gradient} text-2xl shadow-inner`}
-                  >
-                    {c.avatar ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={c.avatar}
-                        alt={c.name}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      c.emoji
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-semibold text-zinc-800">
-                        {c.name}
-                      </span>
-                      <span className="text-xs text-zinc-400">
-                        {c.age}세 · {c.job}
-                      </span>
-                      {isCustom && (
-                        <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-500">
-                          MY
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-1 truncate text-sm text-zinc-500">
-                      {c.tagline}
-                    </p>
-                  </div>
-                </div>
-              </Link>
-              {isCustom && (
-                <>
-                  <Link
-                    href={`/create?edit=${c.id}`}
-                    aria-label="캐릭터 수정"
-                    className="absolute right-11 top-3 flex h-7 w-7 items-center justify-center rounded-full text-zinc-300 transition-colors hover:bg-purple-50 hover:text-purple-400"
-                  >
-                    ✎
-                  </Link>
-                  <DeleteCharacterButton id={c.id} name={c.name} />
-                </>
-              )}
-            </li>
-          );
-        })}
+        {[...others, ...characters].map((c) => (
+          <CharacterCard key={c.id} c={c} />
+        ))}
       </ul>
 
       <footer className="mt-auto pt-10 text-center text-xs text-zinc-400">

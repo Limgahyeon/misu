@@ -259,7 +259,12 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
           )}
         </div>
       </header>
-      {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
+      {profileOpen && (
+        <ProfileModal
+          characterId={character.id}
+          onClose={() => setProfileOpen(false)}
+        />
+      )}
 
       <div
         ref={scrollRef}

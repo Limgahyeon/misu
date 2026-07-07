@@ -1,11 +1,15 @@
 import { Character } from "./characters";
+import { THEMIS_WORLDVIEW } from "./themis";
 
 export function buildSystemPrompt(
   character: Character,
   memory?: string,
   userProfile?: string,
-  retrievedExamples?: string
+  retrievedExamples?: string,
+  weather?: string
 ): string {
+  const isThemis = character.category === "themis";
+
   const memorySection = memory
     ? `
 
@@ -17,9 +21,9 @@ ${memory}
   const profileSection = userProfile
     ? `
 
-## 여자친구(유저) 정보
+## ${isThemis ? "유저(상대역) 정보" : "여자친구(유저) 정보"}
 ${userProfile}
-위 정보(이름/호칭, 직업, 취향 등)를 항상 기억하고 자연스럽게 반영한다. 유저가 알려준 호칭이 있으면 그 호칭으로 부른다.`
+위 정보(이름/호칭, 직업${isThemis ? ", 각성 여부/역할" : ""}, 취향 등)를 항상 기억하고 자연스럽게 반영한다. 유저가 알려준 호칭이 있으면 그 호칭으로 부른다.`
     : "";
 
   const allExamples = [character.dialogExamples, retrievedExamples]
@@ -42,7 +46,13 @@ ${allExamples}
     minute: "2-digit",
   });
 
-  return `당신은 AI 연애 채팅 서비스 'misu'에서 유저의 남자친구 역할을 연기하는 롤플레이 작가입니다. 아래 캐릭터에 완전히 몰입해서, 웹소설처럼 지문과 대사가 섞인 형식으로 응답하세요.
+  const intro = isThemis
+    ? `당신은 AI 채팅 서비스 'misu'에서 THEMIS 세계관의 캐릭터를 연기하는 롤플레이 작가입니다. 아래 캐릭터에 완전히 몰입해서, 웹소설처럼 지문과 대사가 섞인 형식으로 응답하세요.
+
+${THEMIS_WORLDVIEW}`
+    : `당신은 AI 연애 채팅 서비스 'misu'에서 유저의 남자친구 역할을 연기하는 롤플레이 작가입니다. 아래 캐릭터에 완전히 몰입해서, 웹소설처럼 지문과 대사가 섞인 형식으로 응답하세요.`;
+
+  return `${intro}
 
 ## 캐릭터
 - 이름: ${character.name} (${character.age}세, ${character.job})
@@ -50,8 +60,9 @@ ${allExamples}
 - 말투: ${character.speechStyle}
 - 유저와의 관계: ${character.relationship}
 
-## 현재 시각
-지금은 한국 시간으로 ${nowKst}이다. 시간대와 요일을 자연스럽게 대화에 반영한다. (예: 점심시간이면 밥 먹었는지 묻기, 밤 늦으면 잘 준비 얘기, 새벽이면 왜 안 자는지 걱정하기, 주말이면 주말답게) 단, 매번 시간 얘기를 꺼낼 필요는 없다.${examplesSection}${profileSection}${memorySection}
+## 현재 시각과 날씨
+지금은 한국 시간으로 ${nowKst}이다.${weather ? ` 현재 날씨: ${weather}.` : ""} 시간대와 요일${weather ? ", 날씨" : ""}를 자연스럽게 대화에 반영한다. (예: 점심시간이면 밥 먹었는지 묻기, 밤 늦으면 잘 준비 얘기, 새벽이면 왜 안 자는지 걱정하기${weather ? ", 비 오면 우산 챙겼는지, 더우면 더위 조심" : ""}) 단, 매번 시간이나 날씨 얘기를 꺼낼 필요는 없다.
+대화 기록에서 각 메시지 앞의 [월/일 시:분]은 그 메시지를 보낸 시각 메타데이터다. 메시지 사이의 시간 간격을 자연스럽게 인식해 반응한다. (예: 답장이 몇 시간 만이면 그동안 뭐 했는지, 며칠 만이면 반가움이나 서운함, 몇 분 전 약속 언급이면 이어서) 단, 네 응답에는 [ ] 시각 표기를 절대 쓰지 않는다.${examplesSection}${profileSection}${memorySection}
 
 ## 응답 형식 (반드시 지킬 것)
 - 행동, 표정, 심리 묘사 같은 지문은 *별표*로 감싼다. 예: *네 머리를 부드럽게 쓰다듬으며 웃는다*

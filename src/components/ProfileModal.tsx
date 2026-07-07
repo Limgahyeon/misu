@@ -2,19 +2,28 @@
 
 import { useEffect, useState } from "react";
 
-export default function ProfileModal({ onClose }: { onClose: () => void }) {
+export default function ProfileModal({
+  onClose,
+  characterId,
+}: {
+  onClose: () => void;
+  characterId?: string;
+}) {
   const [profile, setProfile] = useState("");
+  const [fallback, setFallback] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch("/api/profile")
+    const query = characterId ? `?characterId=${characterId}` : "";
+    fetch(`/api/profile${query}`)
       .then((r) => r.json())
       .then((data) => {
         setProfile(data.profile ?? "");
+        setFallback(data.fallback ?? "");
         setLoaded(true);
       });
-  }, []);
+  }, [characterId]);
 
   async function save() {
     if (saving) return;
@@ -22,7 +31,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
     await fetch("/api/profile", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile }),
+      body: JSON.stringify({ profile, characterId }),
     });
     onClose();
   }
@@ -36,9 +45,13 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
         className="w-full max-w-sm rounded-3xl border border-white/60 bg-white/95 p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-base font-bold text-zinc-800">내 정보 💌</h2>
+        <h2 className="text-base font-bold text-zinc-800">
+          {characterId ? "이 채팅에서의 나 💌" : "내 정보 💌"}
+        </h2>
         <p className="mt-1 text-xs text-zinc-500">
-          여기 적은 내용을 그가 기억하고 대화에 반영해요.
+          {characterId
+            ? "이 캐릭터와의 대화에서만 쓰는 내 설정이에요. 비워두면 기본 내 정보를 써요."
+            : "여기 적은 내용을 그가 기억하고 대화에 반영해요."}
         </p>
         <textarea
           value={profile}
@@ -46,7 +59,13 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
           rows={6}
           maxLength={2000}
           disabled={!loaded}
-          placeholder={"예)\n이름/호칭: 지은 (지은아 라고 불러줘)\n나이: 26세, 마케터\n좋아하는 것: 매운 음식, 고양이, 발라드\n요즘 고민: 이직 준비 중"}
+          placeholder={
+            characterId
+              ? fallback
+                ? `비워두면 기본 내 정보를 사용:\n${fallback.slice(0, 120)}`
+                : "예)\n이름/호칭: 지은\n역할: MUSE 소속 B급 가이드\n관계: 결속 파트너 후보로 배정됨"
+              : "예)\n이름/호칭: 지은 (지은아 라고 불러줘)\n나이: 26세, 마케터\n좋아하는 것: 매운 음식, 고양이, 발라드\n요즘 고민: 이직 준비 중"
+          }
           className="mt-3 w-full resize-none rounded-2xl border border-rose-100 bg-white px-4 py-3 text-sm text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-rose-300"
         />
         <div className="mt-3 flex gap-2">

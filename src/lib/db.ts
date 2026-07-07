@@ -48,6 +48,11 @@ const ready = db.executeMultiple(`
     content TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS character_profiles (
+    character_id TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `).then(async () => {
   // 기존 테이블에 없는 컬럼 추가 (이미 있으면 에러 무시)
   await db
@@ -55,6 +60,9 @@ const ready = db.executeMultiple(`
     .catch(() => {});
   await db
     .execute("ALTER TABLE characters ADD COLUMN dialog_examples TEXT")
+    .catch(() => {});
+  await db
+    .execute("ALTER TABLE characters ADD COLUMN category TEXT")
     .catch(() => {});
 });
 
@@ -132,6 +140,7 @@ function rowToCharacter(row: Record<string, unknown>): Character {
     firstScene: row.first_scene as string,
     avatar: (row.avatar as string | null) ?? undefined,
     dialogExamples: (row.dialog_examples as string | null) ?? undefined,
+    category: (row.category as string | null) ?? undefined,
   };
 }
 
@@ -162,8 +171,8 @@ export async function createCustomCharacter(
   const id = `c_${crypto.randomUUID().slice(0, 8)}`;
   await db.execute({
     sql: `INSERT INTO characters
-      (id, name, age, job, emoji, gradient, tagline, personality, speech_style, relationship, first_scene, avatar, dialog_examples)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, name, age, job, emoji, gradient, tagline, personality, speech_style, relationship, first_scene, avatar, dialog_examples, category)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       id,
       c.name,
@@ -178,6 +187,7 @@ export async function createCustomCharacter(
       c.firstScene,
       c.avatar ?? null,
       c.dialogExamples ?? null,
+      c.category ?? null,
     ],
   });
   return id;
@@ -191,7 +201,7 @@ export async function updateCustomCharacter(
   await db.execute({
     sql: `UPDATE characters SET
       name = ?, age = ?, job = ?, emoji = ?, gradient = ?, tagline = ?,
-      personality = ?, speech_style = ?, relationship = ?, first_scene = ?, avatar = ?, dialog_examples = ?
+      personality = ?, speech_style = ?, relationship = ?, first_scene = ?, avatar = ?, dialog_examples = ?, category = ?
       WHERE id = ?`,
     args: [
       c.name,
@@ -206,6 +216,7 @@ export async function updateCustomCharacter(
       c.firstScene,
       c.avatar ?? null,
       c.dialogExamples ?? null,
+      c.category ?? null,
       id,
     ],
   });
@@ -216,6 +227,10 @@ export async function deleteCustomCharacter(id: string): Promise<void> {
   await db.execute({ sql: "DELETE FROM characters WHERE id = ?", args: [id] });
   await db.execute({
     sql: "DELETE FROM dialog_snippets WHERE character_id = ?",
+    args: [id],
+  });
+  await db.execute({
+    sql: "DELETE FROM character_profiles WHERE character_id = ?",
     args: [id],
   });
   await resetConversation(id);
@@ -278,6 +293,39 @@ export async function saveProfile(content: string): Promise<void> {
     sql: `INSERT INTO profile (id, content, updated_at) VALUES (1, ?, datetime('now'))
       ON CONFLICT(id) DO UPDATE SET content = excluded.content, updated_at = datetime('now')`,
     args: [content],
+  });
+}
+
+// --- 캐릭터별 유저 인포 (이 채팅에서만 쓰는 '나' 설정) ---
+
+export async function getCharacterProfile(
+  characterId: string
+): Promise<string | undefined> {
+  await ready;
+  const result = await db.execute({
+    sql: "SELECT content FROM character_profiles WHERE character_id = ?",
+    args: [characterId],
+  });
+  const content = result.rows[0]?.content as string | undefined;
+  return content?.trim() ? content : undefined;
+}
+
+export async function saveCharacterProfile(
+  characterId: string,
+  content: string
+): Promise<void> {
+  await ready;
+  if (!content.trim()) {
+    await db.execute({
+      sql: "DELETE FROM character_profiles WHERE character_id = ?",
+      args: [characterId],
+    });
+    return;
+  }
+  await db.execute({
+    sql: `INSERT INTO character_profiles (character_id, content, updated_at) VALUES (?, ?, datetime('now'))
+      ON CONFLICT(character_id) DO UPDATE SET content = excluded.content, updated_at = datetime('now')`,
+    args: [characterId, content],
   });
 }
 
