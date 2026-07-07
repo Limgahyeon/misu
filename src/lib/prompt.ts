@@ -3,7 +3,8 @@ import { Character } from "./characters";
 export function buildSystemPrompt(
   character: Character,
   memory?: string,
-  userProfile?: string
+  userProfile?: string,
+  retrievedExamples?: string
 ): string {
   const memorySection = memory
     ? `
@@ -21,11 +22,14 @@ ${userProfile}
 위 정보(이름/호칭, 직업, 취향 등)를 항상 기억하고 자연스럽게 반영한다. 유저가 알려준 호칭이 있으면 그 호칭으로 부른다.`
     : "";
 
-  const examplesSection = character.dialogExamples
+  const allExamples = [character.dialogExamples, retrievedExamples]
+    .filter(Boolean)
+    .join("\n");
+  const examplesSection = allExamples
     ? `
 
 ## 말투 예시 (이 캐릭터가 실제로 말하는 방식)
-${character.dialogExamples}
+${allExamples}
 위 예시의 어투, 어미, 습관적 표현, 텐션을 최대한 그대로 재현한다. 내용은 베끼지 말고 말투만 흉내낸다.`
     : "";
 

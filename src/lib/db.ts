@@ -35,6 +35,14 @@ const ready = db.executeMultiple(`
     last_message_id INTEGER NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS dialog_snippets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    character_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    embedding TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_snippets_character ON dialog_snippets (character_id);
   CREATE TABLE IF NOT EXISTS profile (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     content TEXT NOT NULL,
@@ -190,7 +198,53 @@ export async function updateCustomCharacter(
 export async function deleteCustomCharacter(id: string): Promise<void> {
   await ready;
   await db.execute({ sql: "DELETE FROM characters WHERE id = ?", args: [id] });
+  await db.execute({
+    sql: "DELETE FROM dialog_snippets WHERE character_id = ?",
+    args: [id],
+  });
   await resetConversation(id);
+}
+
+// --- dialog snippets (말투 예시 저장소) ---
+
+export interface Snippet {
+  id: number;
+  content: string;
+  embedding: number[];
+}
+
+export async function addSnippets(
+  characterId: string,
+  items: { content: string; embedding: number[] }[]
+): Promise<void> {
+  await ready;
+  for (const it of items) {
+    await db.execute({
+      sql: "INSERT INTO dialog_snippets (character_id, content, embedding) VALUES (?, ?, ?)",
+      args: [characterId, it.content, JSON.stringify(it.embedding)],
+    });
+  }
+}
+
+export async function getSnippets(characterId: string): Promise<Snippet[]> {
+  await ready;
+  const result = await db.execute({
+    sql: "SELECT id, content, embedding FROM dialog_snippets WHERE character_id = ? ORDER BY id",
+    args: [characterId],
+  });
+  return result.rows.map((row) => ({
+    id: row.id as number,
+    content: row.content as string,
+    embedding: JSON.parse(row.embedding as string) as number[],
+  }));
+}
+
+export async function deleteSnippet(id: number): Promise<void> {
+  await ready;
+  await db.execute({
+    sql: "DELETE FROM dialog_snippets WHERE id = ?",
+    args: [id],
+  });
 }
 
 // --- user profile ---

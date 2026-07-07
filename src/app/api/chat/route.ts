@@ -7,8 +7,10 @@ import {
   getMemory,
   getMessages,
   getProfile,
+  getSnippets,
   resetConversation,
 } from "@/lib/db";
+import { cosine, embed } from "@/lib/embedding";
 import { updateMemoryIfNeeded } from "@/lib/memory";
 import { buildSystemPrompt } from "@/lib/prompt";
 import { findCharacter } from "@/lib/resolve";
@@ -27,16 +29,43 @@ const CLAUDE_MODELS: Record<string, string> = {
   opus: "claude-opus-4-7",
 };
 
+// 지금 대화 흐름과 가장 비슷한 말투 예시 조각을 골라온다
+async function retrieveExamples(
+  characterId: string,
+  history: History
+): Promise<string | undefined> {
+  try {
+    const snippets = await getSnippets(characterId);
+    if (snippets.length === 0) return undefined;
+    const query = history
+      .filter((m) => m.role === "user")
+      .slice(-3)
+      .map((m) => m.content)
+      .join("\n");
+    if (!query) return undefined;
+    const [qv] = await embed([query]);
+    return snippets
+      .map((s) => ({ s, score: cosine(qv, s.embedding) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 4)
+      .map((x) => x.s.content)
+      .join("\n");
+  } catch {
+    return undefined;
+  }
+}
+
 async function* streamGemini(
   character: Character,
   history: History,
   memory?: string,
-  profile?: string
+  profile?: string,
+  examples?: string
 ) {
   const stream = await gemini.models.generateContentStream({
     model: "gemini-2.5-flash",
     config: {
-      systemInstruction: buildSystemPrompt(character, memory, profile),
+      systemInstruction: buildSystemPrompt(character, memory, profile, examples),
       maxOutputTokens: 1024,
     },
     contents: history.map((m) => ({
@@ -54,12 +83,13 @@ async function* streamClaude(
   character: Character,
   history: History,
   memory?: string,
-  profile?: string
+  profile?: string,
+  examples?: string
 ) {
   const stream = anthropic.messages.stream({
     model,
     max_tokens: 1024,
-    system: buildSystemPrompt(character, memory, profile),
+    system: buildSystemPrompt(character, memory, profile, examples),
     messages: history,
   });
   for await (const event of stream) {
@@ -108,10 +138,19 @@ export async function POST(request: NextRequest) {
     .slice(-HISTORY_LIMIT)
     .map((m) => ({ role: m.role, content: m.content }));
 
+  const examples = await retrieveExamples(character.id, history);
+
   const claudeModel = CLAUDE_MODELS[model as string];
   const textStream = claudeModel
-    ? streamClaude(claudeModel, character, history, memory?.summary, profile)
-    : streamGemini(character, history, memory?.summary, profile);
+    ? streamClaude(
+        claudeModel,
+        character,
+        history,
+        memory?.summary,
+        profile,
+        examples
+      )
+    : streamGemini(character, history, memory?.summary, profile, examples);
 
   const encoder = new TextEncoder();
   const body = new ReadableStream({

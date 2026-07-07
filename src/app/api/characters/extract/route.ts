@@ -1,10 +1,23 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextRequest } from "next/server";
+import { addSnippets } from "@/lib/db";
+import { embed } from "@/lib/embedding";
+import { findCharacter } from "@/lib/resolve";
 
 const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+// 추출된 대화를 6줄 단위 조각으로 나눈다 (검색 단위)
+function chunk(text: string): string[] {
+  const lines = text.split("\n").filter((l) => l.trim());
+  const chunks: string[] = [];
+  for (let i = 0; i < lines.length; i += 6) {
+    chunks.push(lines.slice(i, i + 6).join("\n"));
+  }
+  return chunks;
+}
+
 export async function POST(request: NextRequest) {
-  const { image } = await request.json();
+  const { image, characterId } = await request.json();
   const match =
     typeof image === "string" && image.length < 3_000_000
       ? image.match(/^data:(image\/[a-z+.-]+);base64,(.+)$/)
@@ -44,5 +57,17 @@ export async function POST(request: NextRequest) {
       { status: 422 }
     );
   }
+
+  // 캐릭터가 지정되면 말투 예시 저장소에 쌓는다 (임베딩과 함께)
+  if (typeof characterId === "string" && (await findCharacter(characterId))) {
+    const chunks = chunk(text);
+    const vectors = await embed(chunks);
+    await addSnippets(
+      characterId,
+      chunks.map((content, i) => ({ content, embedding: vectors[i] }))
+    );
+    return Response.json({ examples: text, saved: chunks.length });
+  }
+
   return Response.json({ examples: text });
 }

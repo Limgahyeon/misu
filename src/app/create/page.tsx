@@ -87,7 +87,21 @@ function CreateForm() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [extracting, setExtracting] = useState(false);
+  const [snippets, setSnippets] = useState<{ id: number; content: string }[]>(
+    []
+  );
   const shotRef = useRef<HTMLInputElement>(null);
+
+  async function loadSnippets(id: string) {
+    const res = await fetch(`/api/characters/snippets?characterId=${id}`);
+    const data = await res.json();
+    setSnippets(data.snippets ?? []);
+  }
+
+  async function removeSnippet(id: number) {
+    await fetch(`/api/characters/snippets?id=${id}`, { method: "DELETE" });
+    setSnippets((prev) => prev.filter((s) => s.id !== id));
+  }
 
   async function extractFromScreenshots(files: FileList) {
     setExtracting(true);
@@ -99,7 +113,7 @@ function CreateForm() {
         const res = await fetch("/api/characters/extract", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image }),
+          body: JSON.stringify({ image, characterId: editId ?? undefined }),
         });
         if (!res.ok) continue;
         const data = await res.json();
@@ -109,11 +123,16 @@ function CreateForm() {
         setError("스크린샷에서 대화를 찾지 못했어요. 다른 이미지로 시도해주세요.");
         return;
       }
-      setForm((f) => ({
-        ...f,
-        dialogExamples: (f.dialogExamples ? f.dialogExamples + "\n" : "") +
-          added.slice(0, 4000 - f.dialogExamples.length),
-      }));
+      if (editId) {
+        // 수정 모드: 저장소에 바로 쌓였으니 목록만 새로고침
+        await loadSnippets(editId);
+      } else {
+        setForm((f) => ({
+          ...f,
+          dialogExamples: (f.dialogExamples ? f.dialogExamples + "\n" : "") +
+            added.slice(0, 4000 - f.dialogExamples.length),
+        }));
+      }
     } catch {
       setError("말투 학습에 실패했어요. 다시 시도해주세요.");
     } finally {
@@ -148,6 +167,7 @@ function CreateForm() {
         setGradient(c.gradient);
         setAvatar(c.avatar ?? "");
       });
+    loadSnippets(editId);
   }, [editId]);
 
   const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -363,7 +383,35 @@ function CreateForm() {
           </button>
           <p className="mt-1 px-1 text-[11px] text-zinc-400">
             채팅 화면에는 안 보여요. AI가 말투 학습용으로만 써요.
+            {editId && " 올릴수록 계속 쌓이고, 대화 상황에 맞는 예시를 골라 써요."}
           </p>
+          {editId && snippets.length > 0 && (
+            <div className="mt-2 space-y-1.5">
+              <p className="px-1 text-[11px] font-medium text-zinc-500">
+                쌓인 말투 예시 {snippets.length}개
+              </p>
+              {snippets.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-center gap-2 rounded-xl bg-purple-50/60 px-3 py-2"
+                >
+                  <p className="min-w-0 flex-1 truncate text-[11px] text-zinc-500">
+                    {s.content.split("\n")[0]}
+                    <span className="ml-1 text-zinc-400">
+                      ({s.content.split("\n").length}줄)
+                    </span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => removeSnippet(s.id)}
+                    className="shrink-0 text-zinc-300 hover:text-rose-400"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div>
