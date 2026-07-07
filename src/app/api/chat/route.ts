@@ -14,6 +14,7 @@ import { cosine, embed } from "@/lib/embedding";
 import { updateMemoryIfNeeded } from "@/lib/memory";
 import { buildSystemPrompt } from "@/lib/prompt";
 import { findCharacter } from "@/lib/resolve";
+import { stripTimeMeta } from "@/lib/text";
 import { getWeather } from "@/lib/weather";
 
 const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -34,6 +35,7 @@ function formatKst(createdAt: string): string {
     hour12: false,
   });
 }
+
 
 const CLAUDE_MODELS: Record<string, string> = {
   claude: "claude-sonnet-4-6", // 이전 버전 클라이언트 호환
@@ -150,11 +152,15 @@ export async function POST(request: NextRequest) {
   const recent = messages
     .filter((m) => m.id > (memory?.last_message_id ?? 0))
     .slice(-HISTORY_LIMIT);
-  // 말투 예시 검색용은 원문, 모델에 주는 히스토리에는 보낸 시각 메타데이터를 붙인다
+  // 말투 예시 검색용은 원문, 모델에 주는 히스토리에는 보낸 시각 메타데이터를 붙인다.
+  // 캐릭터(assistant) 메시지에는 붙이지 않는다 — 모델이 형식을 따라 출력하는 것 방지
   const history = recent.map((m) => ({ role: m.role, content: m.content }));
   const timed = recent.map((m) => ({
     role: m.role,
-    content: `[${formatKst(m.created_at)}] ${m.content}`,
+    content:
+      m.role === "user"
+        ? `[${formatKst(m.created_at)}] ${m.content}`
+        : m.content,
   }));
 
   const examples = await retrieveExamples(character.id, history);
@@ -193,7 +199,9 @@ export async function POST(request: NextRequest) {
           console.error("gemini failed, falling back to haiku:", err);
           await pump(streamClaude(CLAUDE_MODELS.haiku, system, timed));
         }
-        if (full) await addMessage(character.id, "assistant", full);
+        if (full) {
+          await addMessage(character.id, "assistant", stripTimeMeta(full));
+        }
         controller.close();
         after(() => updateMemoryIfNeeded(character));
       } catch (err) {

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { stripTimeMeta } from "@/lib/text";
 import ProfileModal from "./ProfileModal";
 
 interface CharacterInfo {
@@ -369,11 +370,12 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
             );
           }
 
-          // 카톡 모드면 줄 단위로 나눠 여러 말풍선으로 보여준다
+          // 시각 메타데이터가 새어 나온 과거 메시지 정리 + 카톡 모드면 줄 단위 분할
+          const clean = stripTimeMeta(m.content);
           const parts =
-            kakaoMode && m.content
-              ? m.content.split(/\n+/).filter((p) => p.trim())
-              : [m.content];
+            kakaoMode && clean
+              ? clean.split(/\n+/).filter((p) => p.trim())
+              : [clean];
           return (
             <div key={i}>
               {divider}
