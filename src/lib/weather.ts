@@ -48,7 +48,7 @@ export async function getWeather(
     const url =
       `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
       "&current=temperature_2m,apparent_temperature,weather_code&timezone=Asia%2FSeoul";
-    const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
     if (!res.ok) return hit?.text;
     const data = await res.json();
     const cur = data.current;

@@ -7,6 +7,7 @@ import {
   getMemory,
   getMessages,
   getProfile,
+  getRecentMessages,
   getSnippets,
   resetConversation,
 } from "@/lib/db";
@@ -48,20 +49,14 @@ const CLAUDE_MODELS: Record<string, string> = {
 let geminiCooldownUntil = 0;
 const GEMINI_COOLDOWN_MS = 30 * 60 * 1000;
 
-// 지금 대화 흐름과 가장 비슷한 말투 예시 조각을 골라온다
+// 지금 유저 메시지와 가장 비슷한 말투 예시 조각을 골라온다
 async function retrieveExamples(
   characterId: string,
-  history: History
+  query: string
 ): Promise<string | undefined> {
   try {
     const snippets = await getSnippets(characterId);
-    if (snippets.length === 0) return undefined;
-    const query = history
-      .filter((m) => m.role === "user")
-      .slice(-3)
-      .map((m) => m.content)
-      .join("\n");
-    if (!query) return undefined;
+    if (snippets.length === 0 || !query) return undefined;
     const [qv] = await embed([query]);
     return snippets
       .map((s) => ({ s, score: cosine(qv, s.embedding) }))
@@ -140,21 +135,21 @@ export async function POST(request: NextRequest) {
   const rawCity = request.headers.get("x-vercel-ip-city");
   const city = rawCity ? decodeURIComponent(rawCity) : undefined;
 
-  // 캐릭터 전용 유저 인포가 있으면 그걸 쓰고, 없으면 기본 내 정보
-  const [messages, memory, profile, weather] = await Promise.all([
-    getMessages(character.id),
+  // 필요한 조회를 전부 병렬로 — 캐릭터 전용 유저 인포가 있으면 그걸, 없으면 기본 내 정보
+  const [messages, memory, profile, weather, examples] = await Promise.all([
+    getRecentMessages(character.id, HISTORY_LIMIT + 20),
     getMemory(character.id),
     getCharacterProfile(character.id).then(
       async (p) => p ?? (await getProfile())
     ),
     getWeather(lat, lon, city),
+    retrieveExamples(character.id, message.trim()),
   ]);
   const recent = messages
     .filter((m) => m.id > (memory?.last_message_id ?? 0))
     .slice(-HISTORY_LIMIT);
-  // 말투 예시 검색용은 원문, 모델에 주는 히스토리에는 보낸 시각 메타데이터를 붙인다.
+  // 모델에 주는 히스토리의 유저 메시지에만 보낸 시각 메타데이터를 붙인다.
   // 캐릭터(assistant) 메시지에는 붙이지 않는다 — 모델이 형식을 따라 출력하는 것 방지
-  const history = recent.map((m) => ({ role: m.role, content: m.content }));
   const timed = recent.map((m) => ({
     role: m.role,
     content:
@@ -162,8 +157,6 @@ export async function POST(request: NextRequest) {
         ? `[${formatKst(m.created_at)}] ${m.content}`
         : m.content,
   }));
-
-  const examples = await retrieveExamples(character.id, history);
   const system = buildSystemPrompt(
     character,
     memory?.summary,

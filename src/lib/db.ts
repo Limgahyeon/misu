@@ -83,6 +83,19 @@ export async function getMessages(characterId: string): Promise<Message[]> {
   return result.rows as unknown as Message[];
 }
 
+// 채팅 응답용 — 전체 대화가 길어져도 최근 것만 가져와 속도를 유지한다
+export async function getRecentMessages(
+  characterId: string,
+  limit: number
+): Promise<Message[]> {
+  await ready;
+  const result = await db.execute({
+    sql: "SELECT * FROM (SELECT * FROM messages WHERE character_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id",
+    args: [characterId, limit],
+  });
+  return result.rows as unknown as Message[];
+}
+
 export async function addMessage(
   characterId: string,
   role: "user" | "assistant",
@@ -244,6 +257,10 @@ export interface Snippet {
   embedding: number[];
 }
 
+// 스니펫은 업로드 때만 바뀌므로 캐시해서 매 메시지마다 임베딩 전체를 다시 읽지 않는다
+const snippetCache = new Map<string, { snippets: Snippet[]; at: number }>();
+const SNIPPET_CACHE_TTL = 5 * 60 * 1000;
+
 export async function addSnippets(
   characterId: string,
   items: { content: string; embedding: number[] }[]
@@ -255,19 +272,24 @@ export async function addSnippets(
       args: [characterId, it.content, JSON.stringify(it.embedding)],
     });
   }
+  snippetCache.delete(characterId);
 }
 
 export async function getSnippets(characterId: string): Promise<Snippet[]> {
+  const hit = snippetCache.get(characterId);
+  if (hit && Date.now() - hit.at < SNIPPET_CACHE_TTL) return hit.snippets;
   await ready;
   const result = await db.execute({
     sql: "SELECT id, content, embedding FROM dialog_snippets WHERE character_id = ? ORDER BY id",
     args: [characterId],
   });
-  return result.rows.map((row) => ({
+  const snippets = result.rows.map((row) => ({
     id: row.id as number,
     content: row.content as string,
     embedding: JSON.parse(row.embedding as string) as number[],
   }));
+  snippetCache.set(characterId, { snippets, at: Date.now() });
+  return snippets;
 }
 
 export async function deleteSnippet(id: number): Promise<void> {
@@ -276,6 +298,7 @@ export async function deleteSnippet(id: number): Promise<void> {
     sql: "DELETE FROM dialog_snippets WHERE id = ?",
     args: [id],
   });
+  snippetCache.clear();
 }
 
 // --- user profile ---

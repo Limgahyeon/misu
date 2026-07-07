@@ -70,7 +70,6 @@ const MODELS: { id: ModelId; label: string; badge?: string }[] = [
   { id: "gemini", label: "Gemini", badge: "무료" },
   { id: "haiku", label: "Haiku" },
   { id: "sonnet", label: "Sonnet" },
-  { id: "opus", label: "Opus" },
 ];
 
 const MODEL_IDS = MODELS.map((m) => m.id) as string[];
@@ -128,7 +127,7 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
 
   useEffect(() => {
     const saved = localStorage.getItem("misu-model");
-    if (saved === "claude") setModel("sonnet");
+    if (saved === "claude" || saved === "opus") setModel("sonnet");
     else if (saved && MODEL_IDS.includes(saved)) setModel(saved as ModelId);
     setKakaoMode(localStorage.getItem(`misu-kakao-${character.id}`) === "1");
   }, [character.id]);
