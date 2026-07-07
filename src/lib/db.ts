@@ -211,6 +211,20 @@ export async function getRecentMessages(
   return result.rows as unknown as Message[];
 }
 
+// 채팅방 진입용 — 대화가 없으면 첫 장면을 심고, 최근 메시지만 돌려준다
+export async function getOrInitMessages(
+  userId: number,
+  character: Character,
+  limit = 100
+): Promise<Message[]> {
+  let messages = await getRecentMessages(userId, character.id, limit);
+  if (messages.length === 0) {
+    await addMessage(userId, character.id, "assistant", character.firstScene);
+    messages = await getRecentMessages(userId, character.id, limit);
+  }
+  return messages;
+}
+
 export async function addMessage(
   userId: number,
   characterId: string,

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getUserId } from "@/lib/auth";
+import { getOrInitMessages } from "@/lib/db";
 import { findCharacter } from "@/lib/resolve";
 import ChatView from "@/components/ChatView";
 
@@ -15,7 +16,10 @@ export default async function ChatPage({
   const character = userId
     ? await findCharacter(userId, characterId)
     : undefined;
-  if (!character) notFound();
+  if (!character || !userId) notFound();
+
+  // 대화를 서버에서 미리 실어 보낸다 — 클라이언트 재요청("불러오는 중") 제거
+  const messages = await getOrInitMessages(userId, character);
 
   return (
     <ChatView
@@ -27,6 +31,11 @@ export default async function ChatPage({
         job: character.job,
         avatar: character.avatar,
       }}
+      initialMessages={messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+        createdAt: m.created_at,
+      }))}
     />
   );
 }

@@ -6,7 +6,7 @@ import {
   addMessage,
   getEffectiveProfile,
   getMemory,
-  getMessages,
+  getOrInitMessages,
   getRecentMessages,
   getSnippets,
   resetConversation,
@@ -118,12 +118,9 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "unknown character" }, { status: 404 });
   }
 
-  let messages = await getMessages(userId, character.id);
-  if (messages.length === 0) {
-    await addMessage(userId, character.id, "assistant", character.firstScene);
-    messages = await getMessages(userId, character.id);
-  }
-  return Response.json({ messages });
+  return Response.json({
+    messages: await getOrInitMessages(userId, character),
+  });
 }
 
 export async function POST(request: NextRequest) {

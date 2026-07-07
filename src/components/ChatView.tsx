@@ -74,11 +74,19 @@ const MODELS: { id: ModelId; label: string; badge?: string }[] = [
 
 const MODEL_IDS = MODELS.map((m) => m.id) as string[];
 
-export default function ChatView({ character }: { character: CharacterInfo }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+export default function ChatView({
+  character,
+  initialMessages,
+}: {
+  character: CharacterInfo;
+  initialMessages?: ChatMessage[];
+}) {
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    initialMessages ?? []
+  );
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(!!initialMessages);
   const [model, setModel] = useState<ModelId>("haiku");
   const [kakaoMode, setKakaoMode] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -154,6 +162,7 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
   }, []);
 
   useEffect(() => {
+    if (initialMessages) return; // 서버에서 이미 실어 보냄
     fetch(`/api/chat?characterId=${character.id}`)
       .then((r) => r.json())
       .then((data) => {
@@ -168,7 +177,7 @@ export default function ChatView({ character }: { character: CharacterInfo }) {
         );
         setLoaded(true);
       });
-  }, [character.id]);
+  }, [character.id, initialMessages]);
 
   useEffect(() => {
     if (!loaded) return;
