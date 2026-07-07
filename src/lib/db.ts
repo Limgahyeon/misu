@@ -111,6 +111,9 @@ const ready = db.executeMultiple(`
       "ALTER TABLE appointments ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1"
     )
     .catch(() => {});
+  await db
+    .execute("ALTER TABLE user_character_profiles ADD COLUMN name TEXT")
+    .catch(() => {});
   // 단일 유저 시절 테이블(memories/character_profiles/profile/settings) → 유저 1로 이관
   await db
     .execute(
@@ -476,17 +479,19 @@ export async function saveProfile(
 }
 
 // 프롬프트에 넣을 최종 유저 인포 — 이름(항상 이 호칭으로) + 캐릭터별 인포(없으면 기본 내 정보)
+// 이름도 캐릭터별 설정이 있으면 그게 우선
 export async function getEffectiveProfile(
   userId: number,
   characterId?: string
 ): Promise<string | undefined> {
-  const [name, charP] = await Promise.all([
+  const [globalName, charP] = await Promise.all([
     getSetting(userId, "user_name"),
     characterId
       ? getCharacterProfile(userId, characterId)
       : Promise.resolve(undefined),
   ]);
-  const body = charP ?? (await getProfile(userId));
+  const name = charP?.name ?? globalName;
+  const body = charP?.content ?? (await getProfile(userId));
   const parts = [
     name ? `이름/호칭: ${name} — 유저를 항상 이 이름으로 부른다.` : undefined,
     body,
@@ -499,23 +504,28 @@ export async function getEffectiveProfile(
 export async function getCharacterProfile(
   userId: number,
   characterId: string
-): Promise<string | undefined> {
+): Promise<{ content?: string; name?: string } | undefined> {
   await ready;
   const result = await db.execute({
-    sql: "SELECT content FROM user_character_profiles WHERE user_id = ? AND character_id = ?",
+    sql: "SELECT content, name FROM user_character_profiles WHERE user_id = ? AND character_id = ?",
     args: [userId, characterId],
   });
-  const content = result.rows[0]?.content as string | undefined;
-  return content?.trim() ? content : undefined;
+  const row = result.rows[0];
+  if (!row) return undefined;
+  const content = (row.content as string | null)?.trim();
+  const name = (row.name as string | null)?.trim();
+  if (!content && !name) return undefined;
+  return { content: content || undefined, name: name || undefined };
 }
 
 export async function saveCharacterProfile(
   userId: number,
   characterId: string,
-  content: string
+  content: string,
+  name: string
 ): Promise<void> {
   await ready;
-  if (!content.trim()) {
+  if (!content.trim() && !name.trim()) {
     await db.execute({
       sql: "DELETE FROM user_character_profiles WHERE user_id = ? AND character_id = ?",
       args: [userId, characterId],
@@ -523,9 +533,10 @@ export async function saveCharacterProfile(
     return;
   }
   await db.execute({
-    sql: `INSERT INTO user_character_profiles (user_id, character_id, content, updated_at) VALUES (?, ?, ?, datetime('now'))
-      ON CONFLICT(user_id, character_id) DO UPDATE SET content = excluded.content, updated_at = datetime('now')`,
-    args: [userId, characterId, content],
+    sql: `INSERT INTO user_character_profiles (user_id, character_id, content, name, updated_at) VALUES (?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(user_id, character_id) DO UPDATE SET
+        content = excluded.content, name = excluded.name, updated_at = datetime('now')`,
+    args: [userId, characterId, content, name.trim() || null],
   });
 }
 

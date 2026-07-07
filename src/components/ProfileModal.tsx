@@ -23,6 +23,7 @@ export default function ProfileModal({
   const [saving, setSaving] = useState(false);
   const [icsUrl, setIcsUrl] = useState("");
   const [userName, setUserName] = useState("");
+  const [fallbackName, setFallbackName] = useState("");
   const [pushState, setPushState] = useState<"unknown" | "on" | "off" | "unsupported">(
     "unknown"
   );
@@ -34,6 +35,10 @@ export default function ProfileModal({
       .then((data) => {
         setProfile(data.profile ?? "");
         setFallback(data.fallback ?? "");
+        if (characterId) {
+          setUserName(data.name ?? "");
+          setFallbackName(data.fallbackName ?? "");
+        }
         setLoaded(true);
       });
     if (!characterId) {
@@ -101,7 +106,11 @@ export default function ProfileModal({
     await fetch("/api/profile", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile, characterId }),
+      body: JSON.stringify({
+        profile,
+        characterId,
+        name: characterId ? userName : undefined,
+      }),
     });
     if (!characterId) {
       await fetch("/api/settings", {
@@ -130,15 +139,24 @@ export default function ProfileModal({
             ? "이 캐릭터와의 대화에서만 쓰는 내 설정이에요. 비워두면 기본 내 정보를 써요."
             : "여기 적은 내용을 그가 기억하고 대화에 반영해요."}
         </p>
-        {!characterId && (
-          <input
-            value={userName}
-            onChange={(e) => setUserName(e.target.value)}
-            maxLength={30}
-            disabled={!loaded}
-            placeholder="이름 (그가 이렇게 불러요 — 예: 지은, 자기야)"
-            className="mt-3 w-full rounded-2xl border border-rose-100 bg-white px-4 py-3 text-sm text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-rose-300"
-          />
+        <input
+          value={userName}
+          onChange={(e) => setUserName(e.target.value)}
+          maxLength={30}
+          disabled={!loaded}
+          placeholder={
+            characterId
+              ? fallbackName
+                ? `이름 — 비워두면 "${fallbackName}"으로 불러요`
+                : "이름 (이 캐릭터가 이렇게 불러요)"
+              : "이름 (그가 이렇게 불러요 — 예: 지은, 자기야)"
+          }
+          className="mt-3 w-full rounded-2xl border border-rose-100 bg-white px-4 py-3 text-sm text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-rose-300"
+        />
+        {characterId && !userName && fallbackName && (
+          <p className="mt-1 px-1 text-[11px] text-zinc-400">
+            지금은 기본 이름 &quot;{fallbackName}&quot;으로 불러요
+          </p>
         )}
         <textarea
           value={profile}
