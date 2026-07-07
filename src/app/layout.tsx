@@ -4,6 +4,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "misu — 내 하루의 마지막 대화",
   description: "진짜 남자친구처럼 일상을 공유하는 AI 채팅",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "misu" },
+  icons: { apple: "/apple-touch-icon.png" },
 };
 
 export const viewport: Viewport = {

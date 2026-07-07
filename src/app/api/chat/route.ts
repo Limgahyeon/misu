@@ -13,6 +13,7 @@ import {
 } from "@/lib/db";
 import { cosine, embed } from "@/lib/embedding";
 import { updateMemoryIfNeeded } from "@/lib/memory";
+import { extractAppointmentIfAny } from "@/lib/proactive";
 import { buildSystemPrompt } from "@/lib/prompt";
 import { findCharacter } from "@/lib/resolve";
 import { stripTimeMeta } from "@/lib/text";
@@ -196,7 +197,12 @@ export async function POST(request: NextRequest) {
           await addMessage(character.id, "assistant", stripTimeMeta(full));
         }
         controller.close();
-        after(() => updateMemoryIfNeeded(character));
+        after(() =>
+          Promise.all([
+            updateMemoryIfNeeded(character),
+            extractAppointmentIfAny(message.trim()),
+          ])
+        );
       } catch (err) {
         console.error("chat stream failed:", err);
         if (!full) {

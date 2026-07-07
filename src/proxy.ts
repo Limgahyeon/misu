@@ -15,7 +15,16 @@ export async function proxy(request: NextRequest) {
   if (!accessCode) return NextResponse.next();
 
   const { pathname } = request.nextUrl;
-  if (pathname === "/login" || pathname === "/api/login") {
+  if (
+    pathname === "/login" ||
+    pathname === "/api/login" ||
+    // PWA 자산과 크론 하트비트는 게이트 없이 접근 (하트비트는 자체 시크릿 검증)
+    pathname === "/sw.js" ||
+    pathname === "/manifest.webmanifest" ||
+    pathname === "/apple-touch-icon.png" ||
+    pathname.startsWith("/icon-") ||
+    pathname === "/api/heartbeat"
+  ) {
     return NextResponse.next();
   }
 

@@ -2,6 +2,14 @@
 
 import { useEffect, useState } from "react";
 
+function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob((base64 + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  const arr = new Uint8Array(new ArrayBuffer(raw.length));
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
 export default function ProfileModal({
   onClose,
   characterId,
@@ -13,6 +21,10 @@ export default function ProfileModal({
   const [fallback, setFallback] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [icsUrl, setIcsUrl] = useState("");
+  const [pushState, setPushState] = useState<"unknown" | "on" | "off" | "unsupported">(
+    "unknown"
+  );
 
   useEffect(() => {
     const query = characterId ? `?characterId=${characterId}` : "";
@@ -23,7 +35,61 @@ export default function ProfileModal({
         setFallback(data.fallback ?? "");
         setLoaded(true);
       });
+    if (!characterId) {
+      fetch("/api/settings")
+        .then((r) => r.json())
+        .then((data) => setIcsUrl(data.ics_url ?? ""));
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        setPushState("unsupported");
+      } else {
+        navigator.serviceWorker
+          .register("/sw.js")
+          .then((reg) => reg.pushManager.getSubscription())
+          .then((sub) => setPushState(sub ? "on" : "off"))
+          .catch(() => setPushState("off"));
+      }
+    }
   }, [characterId]);
+
+  async function enablePush() {
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") return;
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(
+          process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ""
+        ),
+      });
+      await fetch("/api/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub.toJSON()),
+      });
+      setPushState("on");
+    } catch {
+      setPushState("off");
+    }
+  }
+
+  async function disablePush() {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await fetch("/api/push", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        });
+        await sub.unsubscribe();
+      }
+      setPushState("off");
+    } catch {
+      /* 무시 */
+    }
+  }
 
   async function save() {
     if (saving) return;
@@ -33,6 +99,13 @@ export default function ProfileModal({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profile, characterId }),
     });
+    if (!characterId) {
+      await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ics_url: icsUrl }),
+      });
+    }
     onClose();
   }
 
@@ -68,6 +141,53 @@ export default function ProfileModal({
           }
           className="mt-3 w-full resize-none rounded-2xl border border-rose-100 bg-white px-4 py-3 text-sm text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-rose-300"
         />
+
+        {!characterId && (
+          <div className="mt-4 space-y-3 border-t border-zinc-100 pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-zinc-700">
+                  🔔 먼저 연락 받기
+                </p>
+                <p className="text-[11px] text-zinc-400">
+                  {pushState === "unsupported"
+                    ? "이 브라우저는 알림을 지원하지 않아요 (iPhone은 홈 화면에 추가 후 가능)"
+                    : "그가 먼저 보낸 톡과 일정 리마인드를 알림으로 받아요"}
+                </p>
+              </div>
+              {pushState !== "unsupported" && (
+                <button
+                  type="button"
+                  onClick={pushState === "on" ? disablePush : enablePush}
+                  disabled={pushState === "unknown"}
+                  className={`shrink-0 rounded-xl px-3 py-1.5 text-xs font-medium ${
+                    pushState === "on"
+                      ? "bg-emerald-100 text-emerald-600"
+                      : "bg-rose-100 text-rose-500"
+                  } disabled:opacity-40`}
+                >
+                  {pushState === "on" ? "켜짐 ✓" : "켜기"}
+                </button>
+              )}
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-zinc-700">
+                📅 구글 캘린더 연동
+              </p>
+              <p className="text-[11px] text-zinc-400">
+                캘린더 설정 → 내 캘린더 → &quot;iCal 형식의 비밀 주소&quot;를
+                붙여넣으면 일정을 챙겨줘요
+              </p>
+              <input
+                value={icsUrl}
+                onChange={(e) => setIcsUrl(e.target.value)}
+                placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"
+                className="mt-2 w-full rounded-2xl border border-rose-100 bg-white px-4 py-2.5 text-xs text-zinc-700 outline-none placeholder:text-zinc-300 focus:border-rose-300"
+              />
+            </div>
+          </div>
+        )}
+
         <div className="mt-3 flex gap-2">
           <button
             onClick={onClose}
