@@ -99,6 +99,22 @@ export async function resetConversation(characterId: string): Promise<void> {
   });
 }
 
+export interface ChatListRow {
+  character_id: string;
+  content: string;
+  created_at: string;
+}
+
+export async function getChatList(): Promise<ChatListRow[]> {
+  await ready;
+  const result = await db.execute(`
+    SELECT character_id, content, created_at FROM messages
+    WHERE id IN (SELECT MAX(id) FROM messages GROUP BY character_id)
+    ORDER BY id DESC
+  `);
+  return result.rows as unknown as ChatListRow[];
+}
+
 // --- custom characters ---
 
 function rowToCharacter(row: Record<string, unknown>): Character {

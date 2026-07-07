@@ -3,6 +3,7 @@ import { characters } from "@/lib/characters";
 import { getCustomCharacters } from "@/lib/db";
 import DeleteCharacterButton from "@/components/DeleteCharacterButton";
 import ProfileButton from "@/components/ProfileButton";
+import TabBar from "@/components/TabBar";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,7 @@ export default async function Home() {
   const custom = await getCustomCharacters();
 
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-md flex-col px-5 py-10">
+    <main className="mx-auto flex min-h-full w-full max-w-md flex-col px-5 pb-24 pt-10">
       <header className="relative mb-8 text-center">
         <ProfileButton />
         <h1 className="text-4xl font-bold tracking-tight text-zinc-800">
@@ -101,6 +102,8 @@ export default async function Home() {
       <footer className="mt-auto pt-10 text-center text-xs text-zinc-400">
         모든 대화 상대는 AI 캐릭터입니다
       </footer>
+
+      <TabBar active="/" />
     </main>
   );
 }
