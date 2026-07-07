@@ -6,7 +6,7 @@ const db = createClient({
   authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
-const ready = db.executeMultiple(`
+const initSql = `
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -83,7 +83,10 @@ const ready = db.executeMultiple(`
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, key)
   );
-`).then(async () => {
+`;
+
+async function init() {
+  await db.executeMultiple(initSql);
   // 기존 테이블에 없는 컬럼 추가 (이미 있으면 에러 무시)
   await db
     .execute("ALTER TABLE characters ADD COLUMN avatar TEXT")
@@ -139,6 +142,17 @@ const ready = db.executeMultiple(`
         SELECT 1, key, value, updated_at FROM settings`
     )
     .catch(() => {});
+}
+
+// 초기화가 일시 오류(네트워크 등)로 실패해도 인스턴스 전체가 죽지 않게 한다.
+// 테이블은 이미 존재하므로 재시도 후에도 실패하면 그냥 진행해도 안전하다.
+const ready = init().catch(async (err) => {
+  console.error("db init failed, retrying once:", err);
+  try {
+    await init();
+  } catch (err2) {
+    console.error("db init retry failed, continuing:", err2);
+  }
 });
 
 // --- users ---

@@ -270,13 +270,18 @@ export async function runHeartbeat(
   let reminders = 0;
   let proactive = 0;
   for (const user of users) {
-    await syncCalendarForUser(user.id);
-    reminders += await checkRemindersForUser(user.id);
-    if (
-      wantProactive &&
-      (await maybeProactiveForUser(user.id, callsPerHour))
-    ) {
-      proactive++;
+    // 한 유저에서 나는 에러가 전체 하트비트를 실패시키지 않게
+    try {
+      await syncCalendarForUser(user.id);
+      reminders += await checkRemindersForUser(user.id);
+      if (
+        wantProactive &&
+        (await maybeProactiveForUser(user.id, callsPerHour))
+      ) {
+        proactive++;
+      }
+    } catch (err) {
+      console.error(`heartbeat failed for user ${user.id}:`, err);
     }
   }
   return { reminders, proactive };
