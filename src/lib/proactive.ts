@@ -174,8 +174,13 @@ async function checkRemindersForUser(userId: number): Promise<number> {
   return sent;
 }
 
-// 선톡 — 활동 시간대에, 유저가 조용할 때, 하루 한도 내에서 확률적으로
-async function maybeProactiveForUser(userId: number): Promise<boolean> {
+// 선톡 — 활동 시간대에, 유저가 조용할 때, 하루 한도 내에서 확률적으로.
+// callsPerHour: 하트비트 호출 빈도 — 자주 호출될수록 회당 확률을 낮춰
+// 하루 목표 횟수가 활동 시간대에 고르게 퍼지도록 한다.
+async function maybeProactiveForUser(
+  userId: number,
+  callsPerHour: number
+): Promise<boolean> {
   const partner = await currentPartner(userId);
   if (!partner) return false;
 
@@ -211,8 +216,10 @@ async function maybeProactiveForUser(userId: number): Promise<boolean> {
       60000;
     if (idleMin < IDLE_MINUTES) return false;
   }
-  // 확률적으로 보낸다 (자주 호출돼도 하루 2~3번 수준이 되도록)
-  if (Math.random() > 0.25) return false;
+  // 남은 횟수를 남은 활동 시간에 고르게 분산
+  const hoursLeft = Math.max(1, ACTIVE_HOURS_KST[1] - kstHour);
+  const p = Math.min(0.6, (perDay - count) / (hoursLeft * callsPerHour));
+  if (Math.random() > p) return false;
 
   const [profile, memory, todaySchedule] = await Promise.all([
     getCharacterProfile(userId, partner.id).then(
@@ -261,7 +268,8 @@ async function maybeProactiveForUser(userId: number): Promise<boolean> {
 
 // 하트비트 — 전체 유저를 순회하며 캘린더 동기화 / 리마인더 / 선톡 처리
 export async function runHeartbeat(
-  wantProactive: boolean
+  wantProactive: boolean,
+  callsPerHour: number
 ): Promise<{ reminders: number; proactive: number }> {
   const users = await listUsers();
   let reminders = 0;
@@ -269,7 +277,12 @@ export async function runHeartbeat(
   for (const user of users) {
     await syncCalendarForUser(user.id);
     reminders += await checkRemindersForUser(user.id);
-    if (wantProactive && (await maybeProactiveForUser(user.id))) proactive++;
+    if (
+      wantProactive &&
+      (await maybeProactiveForUser(user.id, callsPerHour))
+    ) {
+      proactive++;
+    }
   }
   return { reminders, proactive };
 }

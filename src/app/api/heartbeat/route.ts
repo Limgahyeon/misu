@@ -13,8 +13,14 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  // ?proactive=0 이면 리마인더만 (외부 스케줄러가 자주 칠 때)
+  // ?proactive=0 이면 리마인더만
   const wantProactive = request.nextUrl.searchParams.get("proactive") !== "0";
-  const result = await runHeartbeat(wantProactive);
+  // Vercel Cron(하루 2회)이면 회당 확률을 높게, 외부 스케줄러(10분 주기)면
+  // 낮게 잡아 선톡이 하루 목표 횟수에 맞게 분산되도록 한다
+  const isVercelCron = (request.headers.get("user-agent") ?? "").includes(
+    "vercel-cron"
+  );
+  const callsPerHour = isVercelCron ? 0.5 : 6;
+  const result = await runHeartbeat(wantProactive, callsPerHour);
   return Response.json({ ok: true, ...result });
 }
