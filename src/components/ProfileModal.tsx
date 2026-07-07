@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { characters as presetCharacters } from "@/lib/characters";
 
 function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
@@ -24,6 +25,10 @@ export default function ProfileModal({
   const [icsUrl, setIcsUrl] = useState("");
   const [userName, setUserName] = useState("");
   const [fallbackName, setFallbackName] = useState("");
+  const [partner, setPartner] = useState("");
+  const [allCharacters, setAllCharacters] = useState<
+    { id: string; name: string }[]
+  >([]);
   const [pushState, setPushState] = useState<"unknown" | "on" | "off" | "unsupported">(
     "unknown"
   );
@@ -47,6 +52,18 @@ export default function ProfileModal({
         .then((data) => {
           setIcsUrl(data.ics_url ?? "");
           setUserName(data.user_name ?? "");
+          setPartner(data.proactive_partner ?? "");
+        });
+      fetch("/api/characters")
+        .then((r) => r.json())
+        .then((data) => {
+          const custom = (data.characters ?? []).map(
+            (c: { id: string; name: string }) => ({ id: c.id, name: c.name })
+          );
+          setAllCharacters([
+            ...custom,
+            ...presetCharacters.map((c) => ({ id: c.id, name: c.name })),
+          ]);
         });
       if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
         setPushState("unsupported");
@@ -116,7 +133,11 @@ export default function ProfileModal({
       await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ics_url: icsUrl, user_name: userName }),
+        body: JSON.stringify({
+          ics_url: icsUrl,
+          user_name: userName,
+          proactive_partner: partner,
+        }),
       });
     }
     onClose();
@@ -201,6 +222,26 @@ export default function ProfileModal({
                   {pushState === "on" ? "켜짐 ✓" : "켜기"}
                 </button>
               )}
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-zinc-700">
+                💘 먼저 연락하는 사람
+              </p>
+              <p className="text-[11px] text-zinc-400">
+                선톡과 일정 리마인드를 누가 보낼지 정해요
+              </p>
+              <select
+                value={partner}
+                onChange={(e) => setPartner(e.target.value)}
+                className="mt-2 w-full rounded-2xl border border-rose-100 bg-white px-4 py-2.5 text-sm text-zinc-700 outline-none focus:border-rose-300"
+              >
+                <option value="">최근에 대화한 사람 (자동)</option>
+                {allCharacters.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <p className="text-sm font-semibold text-zinc-700">

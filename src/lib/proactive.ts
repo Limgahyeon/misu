@@ -41,8 +41,14 @@ async function generateShort(system: string, ask: string): Promise<string> {
   return block?.type === "text" ? stripTimeMeta(block.text.trim()) : "";
 }
 
-// 유저가 가장 최근에 대화한 캐릭터 = 그 유저의 '남친 겸 매니저'
+// 선톡/리마인드 담당 — 설정(proactive_partner)에 지정된 캐릭터가 있으면 그가,
+// 없으면 가장 최근에 대화한 캐릭터가 '남친 겸 매니저'
 async function currentPartner(userId: number): Promise<Character | undefined> {
+  const pinned = await getSetting(userId, "proactive_partner");
+  if (pinned) {
+    const c = await findCharacter(userId, pinned);
+    if (c) return c;
+  }
   const list = await getChatList(userId);
   for (const row of list) {
     const c = await findCharacter(userId, row.character_id);
