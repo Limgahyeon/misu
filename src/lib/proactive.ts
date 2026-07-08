@@ -335,7 +335,8 @@ async function maybeFirstSnow(userId: number): Promise<boolean> {
   const weather = await getWeather(
     geo[0] || "37.5665",
     geo[1] || "126.978",
-    geo[2] || undefined
+    geo[2] || undefined,
+    { timeoutMs: 5000, retries: 1 }
   );
   if (!weather || !weather.includes("눈")) return false;
 
@@ -394,7 +395,10 @@ async function maybeMorningBrief(userId: number): Promise<boolean> {
   const [profile, memory, weather, schedule] = await Promise.all([
     getEffectiveProfile(userId, partner.id),
     getMemory(userId, partner.id),
-    getWeather(geo[0] || "37.5665", geo[1] || "126.978", geo[2] || undefined),
+    getWeather(geo[0] || "37.5665", geo[1] || "126.978", geo[2] || undefined, {
+      timeoutMs: 5000,
+      retries: 2,
+    }),
     getUpcomingAppointments(userId, 18),
   ]);
 
@@ -416,7 +420,7 @@ async function maybeMorningBrief(userId: number): Promise<boolean> {
     const text = await generateShort(
       partnerSystem(partner, profile, memory?.summary),
       `아침이야. 유저에게 하루를 시작하는 모닝 브리핑 카톡을 보내줘.
-- 오늘 날씨: ${weather ?? "정보 없음"} — 날씨에 맞는 한마디 (비 오면 우산, 더우면 시원하게 등)
+${weather ? `- 오늘 날씨: ${weather} — 반드시 날씨 얘기를 포함할 것 (비 오면 우산, 더우면 시원하게, 온도 언급 등)` : ""}
 - 오늘 일정: ${scheduleText} — 일정이 있으면 짚어주고, 없으면 언급하지 않아도 됨
 - 남자친구다운 다정한 아침 인사와 응원으로 마무리
 2~3개의 짧은 메시지로.`

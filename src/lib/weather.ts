@@ -38,30 +38,37 @@ const TTL_MS = 30 * 60 * 1000;
 export async function getWeather(
   lat: string,
   lon: string,
-  city?: string
+  city?: string,
+  // 채팅은 짧게(응답 지연 방지), 백그라운드 작업(모닝 브리핑 등)은 넉넉하게 + 재시도
+  opts?: { timeoutMs?: number; retries?: number }
 ): Promise<string | undefined> {
   const key = `${lat},${lon}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.text;
 
-  try {
-    const url =
-      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-      "&current=temperature_2m,apparent_temperature,weather_code&timezone=Asia%2FSeoul";
-    const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
-    if (!res.ok) return hit?.text;
-    const data = await res.json();
-    const cur = data.current;
-    const desc = WMO_DESC[cur.weather_code as number] ?? "";
-    const temp = Math.round(cur.temperature_2m);
-    const feels = Math.round(cur.apparent_temperature);
-    const text = `${city ? `${city} 기준 ` : ""}${desc} ${temp}°C${
-      feels !== temp ? ` (체감 ${feels}°C)` : ""
-    }`;
-    cache.set(key, { text, at: Date.now() });
-    return text;
-  } catch {
-    // 날씨는 부가 정보 — 실패해도 채팅은 그대로 진행
-    return hit?.text;
+  const timeoutMs = opts?.timeoutMs ?? 1500;
+  const retries = opts?.retries ?? 0;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const url =
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+        "&current=temperature_2m,apparent_temperature,weather_code&timezone=Asia%2FSeoul";
+      const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const cur = data.current;
+      const desc = WMO_DESC[cur.weather_code as number] ?? "";
+      const temp = Math.round(cur.temperature_2m);
+      const feels = Math.round(cur.apparent_temperature);
+      const text = `${city ? `${city} 기준 ` : ""}${desc} ${temp}°C${
+        feels !== temp ? ` (체감 ${feels}°C)` : ""
+      }`;
+      cache.set(key, { text, at: Date.now() });
+      return text;
+    } catch {
+      // 다음 시도로 — 날씨는 부가 정보라 최종 실패해도 진행
+    }
   }
+  return hit?.text;
 }
