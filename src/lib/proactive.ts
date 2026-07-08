@@ -182,7 +182,8 @@ async function checkRemindersForUser(userId: number): Promise<number> {
 // 하루 목표 횟수가 활동 시간대에 고르게 퍼지도록 한다.
 async function maybeProactiveForUser(
   userId: number,
-  callsPerHour: number
+  callsPerHour: number,
+  force = false
 ): Promise<boolean> {
   const partner = await currentPartner(userId);
   if (!partner) return false;
@@ -194,7 +195,10 @@ async function maybeProactiveForUser(
       hour12: false,
     })
   );
-  if (kstHour < ACTIVE_HOURS_KST[0] || kstHour >= ACTIVE_HOURS_KST[1]) {
+  if (
+    !force &&
+    (kstHour < ACTIVE_HOURS_KST[0] || kstHour >= ACTIVE_HOURS_KST[1])
+  ) {
     return false;
   }
 
@@ -207,12 +211,12 @@ async function maybeProactiveForUser(
   const count = stampDay === today ? Number(stampCount) || 0 : 0;
   const perDay =
     Number(await getSetting(userId, "proactive_per_day")) || DEFAULT_PER_DAY;
-  if (count >= perDay) return false;
+  if (!force && count >= perDay) return false;
 
   // 유저가 방금까지 대화 중이었으면 조용히
   const recent = await getRecentMessages(userId, partner.id, 1);
   const last = recent[0];
-  if (last) {
+  if (!force && last) {
     const idleMin =
       (Date.now() -
         new Date(last.created_at.replace(" ", "T") + "Z").getTime()) /
@@ -222,7 +226,7 @@ async function maybeProactiveForUser(
   // 남은 횟수를 남은 활동 시간에 고르게 분산
   const hoursLeft = Math.max(1, ACTIVE_HOURS_KST[1] - kstHour);
   const p = Math.min(0.6, (perDay - count) / (hoursLeft * callsPerHour));
-  if (Math.random() > p) return false;
+  if (!force && Math.random() > p) return false;
 
   const [profile, memory, todaySchedule] = await Promise.all([
     getEffectiveProfile(userId, partner.id),
@@ -270,7 +274,8 @@ async function maybeProactiveForUser(
 // 하트비트 — 전체 유저를 순회하며 캘린더 동기화 / 리마인더 / 선톡 처리
 export async function runHeartbeat(
   wantProactive: boolean,
-  callsPerHour: number
+  callsPerHour: number,
+  forceUserId?: number
 ): Promise<{ reminders: number; proactive: number }> {
   const users = await listUsers();
   let reminders = 0;
@@ -282,7 +287,11 @@ export async function runHeartbeat(
       reminders += await checkRemindersForUser(user.id);
       if (
         wantProactive &&
-        (await maybeProactiveForUser(user.id, callsPerHour))
+        (await maybeProactiveForUser(
+          user.id,
+          callsPerHour,
+          forceUserId === user.id
+        ))
       ) {
         proactive++;
       }

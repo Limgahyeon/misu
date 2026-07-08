@@ -21,6 +21,9 @@ export async function GET(request: NextRequest) {
     "vercel-cron"
   );
   const callsPerHour = isVercelCron ? 0.5 : 6;
-  const result = await runHeartbeat(wantProactive, callsPerHour);
+  // ?force=<userId> — 해당 유저에게 조건 무시하고 즉시 선톡 (테스트용)
+  const forceRaw = request.nextUrl.searchParams.get("force");
+  const forceUserId = forceRaw ? Number(forceRaw) : undefined;
+  const result = await runHeartbeat(wantProactive, callsPerHour, forceUserId);
   return Response.json({ ok: true, ...result });
 }
