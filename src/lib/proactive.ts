@@ -11,7 +11,9 @@ import {
   getRecentMessages,
   getSetting,
   getUpcomingAppointments,
+  listAnniversaries,
   listUsers,
+  markCelebrated,
   markReminded,
   saveSetting,
 } from "./db";
@@ -198,6 +200,171 @@ async function checkRemindersForUser(userId: number): Promise<number> {
   return sent;
 }
 
+// 설정 없이도 챙겨주는 기념일 (MM-DD)
+const BUILTIN_DAYS: Record<string, string> = {
+  "01-01": "새해 첫날",
+  "02-14": "발렌타인데이",
+  "03-14": "화이트데이",
+  "11-11": "빼빼로데이",
+  "12-24": "크리스마스 이브",
+  "12-25": "크리스마스",
+};
+
+function kstNow() {
+  const day = new Date().toLocaleDateString("sv-SE", {
+    timeZone: "Asia/Seoul",
+  });
+  const time = new Date().toLocaleTimeString("en-GB", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return { day, minutes: Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5)) };
+}
+
+// 자정(생일·주년·디데이·내장 기념일)과 아침 9시(매월)에 축하 톡을 보낸다
+async function checkCelebrationsForUser(userId: number): Promise<number> {
+  const { day: today, minutes } = kstNow();
+  const inMidnight = minutes < 20; // 00:00~00:20
+  const inMorning = minutes >= 540 && minutes < 560; // 09:00~09:20
+  if (!inMidnight && !inMorning) return 0;
+
+  const todayMmDd = today.slice(5);
+  const celebrations: { key: string; ask: string; annivId?: number }[] = [];
+
+  for (const a of await listAnniversaries(userId)) {
+    if (a.last_celebrated === today) continue;
+    const base = new Date(`${a.date}T00:00:00+09:00`);
+    if (isNaN(base.getTime())) continue;
+
+    if (a.repeat === "yearly" && inMidnight && a.date.slice(5) === todayMmDd) {
+      const years = Number(today.slice(0, 4)) - Number(a.date.slice(0, 4));
+      celebrations.push({
+        key: a.title,
+        annivId: a.id,
+        ask: `오늘 자정이 되면서 유저의 기념일 "${a.title}"이 됐어${years > 0 ? ` (${years}번째)` : ""}. 자정에 제일 먼저 축하해주는 남자친구의 카톡을 보내줘.`,
+      });
+    } else if (
+      a.repeat === "monthly" &&
+      inMorning &&
+      a.date.slice(8) === today.slice(8)
+    ) {
+      celebrations.push({
+        key: a.title,
+        annivId: a.id,
+        ask: `오늘은 매달 챙기는 "${a.title}" 날이야. 아침에 신나게 축하해주는 카톡을 보내줘.`,
+      });
+    } else if (a.repeat === "dday" && inMidnight) {
+      const days =
+        Math.floor(
+          (new Date(`${today}T00:00:00+09:00`).getTime() - base.getTime()) /
+            86400000
+        ) + 1; // 기준일 = 1일
+      const isHundred = days > 0 && days % 100 === 0;
+      const isYear = days > 1 && a.date.slice(5) === todayMmDd;
+      if (isHundred || isYear) {
+        const label = isYear
+          ? `${Number(today.slice(0, 4)) - Number(a.date.slice(0, 4))}주년`
+          : `${days}일`;
+        celebrations.push({
+          key: a.title,
+          annivId: a.id,
+          ask: `오늘 자정으로 "${a.title}" ${label}이 됐어! 자정에 제일 먼저 축하하는 남자친구의 벅찬 카톡을 보내줘. ${label}이라는 걸 꼭 언급해.`,
+        });
+      }
+    }
+  }
+
+  // 내장 기념일 (자정)
+  const builtin = BUILTIN_DAYS[todayMmDd];
+  if (builtin && inMidnight) {
+    const stamp = await getSetting(userId, `builtin_day_${today}`);
+    if (!stamp) {
+      celebrations.push({
+        key: builtin,
+        ask: `오늘은 ${builtin}이야. 자정에 연인에게 보내는 ${builtin} 기념 카톡을 보내줘.`,
+      });
+    }
+  }
+
+  if (celebrations.length === 0) return 0;
+
+  const partner = await currentPartner(userId);
+  if (!partner) return 0;
+  const [profile, memory] = await Promise.all([
+    getEffectiveProfile(userId, partner.id),
+    getMemory(userId, partner.id),
+  ]);
+
+  let sent = 0;
+  for (const c of celebrations) {
+    try {
+      const text = await generateShort(
+        partnerSystem(partner, profile, memory?.summary),
+        c.ask
+      );
+      if (!text) continue;
+      await addMessage(userId, partner.id, "assistant", text);
+      if (c.annivId) await markCelebrated(c.annivId, today);
+      else await saveSetting(userId, `builtin_day_${today}`, "1");
+      await sendPushToUser(userId, {
+        title: `${partner.name} 🎉`,
+        body: text.split("\n")[0].slice(0, 120),
+        url: `/chat/${partner.id}`,
+      });
+      sent++;
+    } catch (err) {
+      console.error("celebration failed:", err);
+    }
+  }
+  return sent;
+}
+
+// 첫눈 감지 — 겨울(11~2월), 유저 위치에 눈 예보가 처음 잡히는 날 (시즌당 1회, 8~22시)
+async function maybeFirstSnow(userId: number): Promise<boolean> {
+  const { day: today, minutes } = kstNow();
+  if (minutes < 480 || minutes >= 1320) return false;
+  const month = Number(today.slice(5, 7));
+  if (month >= 3 && month <= 10) return false;
+
+  const year = Number(today.slice(0, 4));
+  const season = month >= 11 ? year : year - 1;
+  if (await getSetting(userId, `first_snow_${season}`)) return false;
+
+  const geo = (await getSetting(userId, "geo"))?.split(",") ?? [];
+  const weather = await getWeather(
+    geo[0] || "37.5665",
+    geo[1] || "126.978",
+    geo[2] || undefined
+  );
+  if (!weather || !weather.includes("눈")) return false;
+
+  const partner = await currentPartner(userId);
+  if (!partner) return false;
+  const [profile, memory] = await Promise.all([
+    getEffectiveProfile(userId, partner.id),
+    getMemory(userId, partner.id),
+  ]);
+  try {
+    const text = await generateShort(
+      partnerSystem(partner, profile, memory?.summary),
+      `지금 유저가 있는 곳에 이번 겨울 첫눈이 내리고 있어. 첫눈 소식에 설레서 바로 연락하는 남자친구의 카톡을 보내줘.`
+    );
+    if (!text) return false;
+    await addMessage(userId, partner.id, "assistant", text);
+    await saveSetting(userId, `first_snow_${season}`, today);
+    await sendPushToUser(userId, {
+      title: `${partner.name} ❄️`,
+      body: text.split("\n")[0].slice(0, 120),
+      url: `/chat/${partner.id}`,
+    });
+    return true;
+  } catch (err) {
+    console.error("first snow failed:", err);
+    return false;
+  }
+}
+
 // 모닝 브리핑 — 유저가 지정한 시간에 매일 날씨 + 오늘 일정 + 아침 인사
 async function maybeMorningBrief(userId: number): Promise<boolean> {
   const timeSetting = await getSetting(userId, "morning_time");
@@ -378,6 +545,8 @@ export async function runHeartbeat(
     try {
       await syncCalendarForUser(user.id);
       reminders += await checkRemindersForUser(user.id);
+      proactive += await checkCelebrationsForUser(user.id);
+      if (await maybeFirstSnow(user.id)) proactive++;
       if (await maybeMorningBrief(user.id)) proactive++;
       if (
         wantProactive &&

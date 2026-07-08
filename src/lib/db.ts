@@ -89,6 +89,15 @@ const initSql = `
     last_read_id INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, character_id)
   );
+  CREATE TABLE IF NOT EXISTS anniversaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    date TEXT NOT NULL,
+    repeat TEXT NOT NULL DEFAULT 'yearly',
+    last_celebrated TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `;
 
 async function init() {
@@ -672,6 +681,59 @@ export async function clearIcsAppointments(userId: number): Promise<void> {
   await db.execute({
     sql: "DELETE FROM appointments WHERE user_id = ? AND source = 'ics' AND reminded_at IS NULL",
     args: [userId],
+  });
+}
+
+// --- 기념일 (생일/사귄 날/월급날 등) ---
+
+export interface Anniversary {
+  id: number;
+  title: string;
+  date: string; // "YYYY-MM-DD" (KST 기준일)
+  repeat: "yearly" | "monthly" | "dday";
+  last_celebrated: string | null;
+}
+
+export async function listAnniversaries(
+  userId: number
+): Promise<Anniversary[]> {
+  await ready;
+  const result = await db.execute({
+    sql: "SELECT id, title, date, repeat, last_celebrated FROM anniversaries WHERE user_id = ? ORDER BY id",
+    args: [userId],
+  });
+  return result.rows as unknown as Anniversary[];
+}
+
+export async function addAnniversary(
+  userId: number,
+  title: string,
+  date: string,
+  repeat: string
+): Promise<void> {
+  await ready;
+  await db.execute({
+    sql: "INSERT INTO anniversaries (user_id, title, date, repeat) VALUES (?, ?, ?, ?)",
+    args: [userId, title, date, repeat],
+  });
+}
+
+export async function deleteAnniversary(
+  userId: number,
+  id: number
+): Promise<void> {
+  await ready;
+  await db.execute({
+    sql: "DELETE FROM anniversaries WHERE id = ? AND user_id = ?",
+    args: [id, userId],
+  });
+}
+
+export async function markCelebrated(id: number, day: string): Promise<void> {
+  await ready;
+  await db.execute({
+    sql: "UPDATE anniversaries SET last_celebrated = ? WHERE id = ?",
+    args: [day, id],
   });
 }
 

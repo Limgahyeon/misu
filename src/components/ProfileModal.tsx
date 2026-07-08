@@ -27,6 +27,12 @@ export default function ProfileModal({
   const [fallbackName, setFallbackName] = useState("");
   const [partner, setPartner] = useState("");
   const [morningTime, setMorningTime] = useState("");
+  const [anniversaries, setAnniversaries] = useState<
+    { id: number; title: string; date: string; repeat: string }[]
+  >([]);
+  const [annivTitle, setAnnivTitle] = useState("");
+  const [annivDate, setAnnivDate] = useState("");
+  const [annivRepeat, setAnnivRepeat] = useState("yearly");
   const [allCharacters, setAllCharacters] = useState<
     { id: string; name: string }[]
   >([]);
@@ -56,6 +62,9 @@ export default function ProfileModal({
           setPartner(data.proactive_partner ?? "");
           setMorningTime(data.morning_time ?? "");
         });
+      fetch("/api/anniversaries")
+        .then((r) => r.json())
+        .then((data) => setAnniversaries(data.anniversaries ?? []));
       fetch("/api/characters")
         .then((r) => r.json())
         .then((data) => {
@@ -119,6 +128,36 @@ export default function ProfileModal({
     }
   }
 
+  async function addAnniv() {
+    if (!annivTitle.trim() || !annivDate) return;
+    const res = await fetch("/api/anniversaries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: annivTitle,
+        date: annivDate,
+        repeat: annivRepeat,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setAnniversaries(data.anniversaries ?? []);
+      setAnnivTitle("");
+      setAnnivDate("");
+    }
+  }
+
+  async function removeAnniv(id: number) {
+    await fetch(`/api/anniversaries?id=${id}`, { method: "DELETE" });
+    setAnniversaries((prev) => prev.filter((a) => a.id !== id));
+  }
+
+  const REPEAT_LABEL: Record<string, string> = {
+    yearly: "매년",
+    monthly: "매월",
+    dday: "디데이",
+  };
+
   async function save() {
     if (saving) return;
     setSaving(true);
@@ -152,7 +191,7 @@ export default function ProfileModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm rounded-3xl border border-white/60 bg-white/95 p-5 shadow-xl"
+        className="max-h-[85dvh] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/60 bg-white/95 p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-base font-bold text-zinc-800">
@@ -272,6 +311,73 @@ export default function ProfileModal({
                       끄기
                     </button>
                   )}
+                </div>
+              </div>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-zinc-700">🎉 기념일</p>
+              <p className="text-[11px] text-zinc-400">
+                생일·사귄 날은 자정에, 월급날은 아침에 축하 톡이 와요.
+                디데이는 100일 단위와 주년을 자동으로 챙겨요
+              </p>
+              {anniversaries.length > 0 && (
+                <div className="mt-2 space-y-1.5">
+                  {anniversaries.map((a) => (
+                    <div
+                      key={a.id}
+                      className="flex items-center gap-2 rounded-xl bg-rose-50/60 px-3 py-2"
+                    >
+                      <p className="min-w-0 flex-1 truncate text-xs text-zinc-600">
+                        {a.title}
+                        <span className="ml-1.5 text-zinc-400">
+                          {a.date} · {REPEAT_LABEL[a.repeat] ?? a.repeat}
+                        </span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => removeAnniv(a.id)}
+                        className="shrink-0 text-zinc-300 hover:text-rose-400"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="mt-2 space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    value={annivTitle}
+                    onChange={(e) => setAnnivTitle(e.target.value)}
+                    maxLength={50}
+                    placeholder="예: 내 생일, 사귄 날, 월급날"
+                    className="min-w-0 flex-1 rounded-xl border border-rose-100 bg-white px-3 py-2 text-xs text-zinc-700 outline-none placeholder:text-zinc-300 focus:border-rose-300"
+                  />
+                  <select
+                    value={annivRepeat}
+                    onChange={(e) => setAnnivRepeat(e.target.value)}
+                    className="shrink-0 rounded-xl border border-rose-100 bg-white px-2 py-2 text-xs text-zinc-700 outline-none focus:border-rose-300"
+                  >
+                    <option value="yearly">매년</option>
+                    <option value="monthly">매월</option>
+                    <option value="dday">디데이</option>
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={annivDate}
+                    onChange={(e) => setAnnivDate(e.target.value)}
+                    className="min-w-0 flex-1 rounded-xl border border-rose-100 bg-white px-3 py-2 text-xs text-zinc-700 outline-none focus:border-rose-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={addAnniv}
+                    disabled={!annivTitle.trim() || !annivDate}
+                    className="shrink-0 rounded-xl bg-rose-100 px-3 py-2 text-xs font-medium text-rose-500 disabled:opacity-40"
+                  >
+                    추가
+                  </button>
                 </div>
               </div>
             </div>
