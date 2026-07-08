@@ -138,7 +138,7 @@ export async function extractAppointmentIfAny(
 }
 
 // ICS 캘린더 동기화 — 앞으로 7일치 일정을 appointments에 반영
-async function syncCalendarForUser(userId: number): Promise<void> {
+export async function syncCalendarForUser(userId: number): Promise<void> {
   const url = await getSetting(userId, "ics_url");
   if (!url) return;
   try {

@@ -7,7 +7,8 @@ export function buildSystemPrompt(
   userProfile?: string,
   retrievedExamples?: string,
   weather?: string,
-  kakaoMode?: boolean
+  kakaoMode?: boolean,
+  schedule?: string
 ): string {
   const isThemis = character.category === "themis";
 
@@ -25,6 +26,14 @@ ${memory}
 ## ${isThemis ? "유저(상대역) 정보" : "여자친구(유저) 정보"}
 ${userProfile}
 위 정보(이름/호칭, 직업${isThemis ? ", 각성 여부/역할" : ""}, 취향 등)를 항상 기억하고 자연스럽게 반영한다. 유저가 알려준 호칭이 있으면 그 호칭으로 부른다.`
+    : "";
+
+  const scheduleSection = schedule
+    ? `
+
+## 유저의 다가오는 일정 (캘린더·대화에서 수집)
+${schedule}
+남자친구 겸 매니저로서 위 일정을 알고 있다. 유저가 일정을 물어보면 이걸 바탕으로 알려주고, 일정 전후로 자연스럽게 챙긴다. (예: 내일 병원 가는 날이지? 잘 다녀와) 단, 묻지도 않았는데 일정을 목록처럼 줄줄 나열하지는 않는다.`
     : "";
 
   const allExamples = [character.dialogExamples, retrievedExamples]
@@ -64,7 +73,7 @@ ${THEMIS_WORLDVIEW}`
 
 ## 현재 시각과 날씨
 지금은 한국 시간으로 ${nowKst}이다.${weather ? ` 현재 날씨: ${weather}.` : ""} 시간대와 요일${weather ? ", 날씨" : ""}를 자연스럽게 대화에 반영한다. (예: 점심시간이면 밥 먹었는지 묻기, 밤 늦으면 잘 준비 얘기, 새벽이면 왜 안 자는지 걱정하기${weather ? ", 비 오면 우산 챙겼는지, 더우면 더위 조심" : ""}) 단, 매번 시간이나 날씨 얘기를 꺼낼 필요는 없다.
-대화 기록에서 유저 메시지 앞의 [월. 일. 시:분]은 보낸 시각 메타데이터일 뿐, 유저가 쓴 내용이 아니다. 메시지 사이의 시간 간격을 자연스럽게 인식해 반응한다. (예: 답장이 몇 시간 만이면 그동안 뭐 했는지, 며칠 만이면 반가움이나 서운함, 몇 분 전 약속 언급이면 이어서) 네 응답에는 어떤 형태로든 [ ] 시각 표기를 절대 쓰지 않는다.${examplesSection}${profileSection}${memorySection}
+대화 기록에서 유저 메시지 앞의 [월. 일. 시:분]은 보낸 시각 메타데이터일 뿐, 유저가 쓴 내용이 아니다. 메시지 사이의 시간 간격을 자연스럽게 인식해 반응한다. (예: 답장이 몇 시간 만이면 그동안 뭐 했는지, 며칠 만이면 반가움이나 서운함, 몇 분 전 약속 언급이면 이어서) 네 응답에는 어떤 형태로든 [ ] 시각 표기를 절대 쓰지 않는다.${scheduleSection}${examplesSection}${profileSection}${memorySection}
 
 ${
   kakaoMode

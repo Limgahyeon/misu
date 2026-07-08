@@ -9,6 +9,7 @@ import {
   getOrInitMessages,
   getRecentMessages,
   getSnippets,
+  getUpcomingAppointments,
   markRead,
   resetConversation,
   saveSetting,
@@ -147,13 +148,31 @@ export async function POST(request: NextRequest) {
   const city = rawCity ? decodeURIComponent(rawCity) : undefined;
 
   // 필요한 조회를 전부 병렬로 — 유저 인포는 이름 + 캐릭터별(없으면 기본)
-  const [messages, memory, profile, weather, examples] = await Promise.all([
-    getRecentMessages(userId, character.id, HISTORY_LIMIT + 20),
-    getMemory(userId, character.id),
-    getEffectiveProfile(userId, character.id),
-    getWeather(lat, lon, city),
-    retrieveExamples(character.id, message.trim()),
-  ]);
+  const [messages, memory, profile, weather, examples, appointments] =
+    await Promise.all([
+      getRecentMessages(userId, character.id, HISTORY_LIMIT + 20),
+      getMemory(userId, character.id),
+      getEffectiveProfile(userId, character.id),
+      getWeather(lat, lon, city),
+      retrieveExamples(character.id, message.trim()),
+      getUpcomingAppointments(userId, 7 * 24),
+    ]);
+  const schedule =
+    appointments.length > 0
+      ? appointments
+          .map((a) => {
+            const d = new Date(a.at.replace(" ", "T") + "Z");
+            return `- ${d.toLocaleString("ko-KR", {
+              timeZone: "Asia/Seoul",
+              month: "numeric",
+              day: "numeric",
+              weekday: "short",
+              hour: "numeric",
+              minute: "2-digit",
+            })} — ${a.title}`;
+          })
+          .join("\n")
+      : undefined;
   const recent = messages
     .filter((m) => m.id > (memory?.last_message_id ?? 0))
     .slice(-HISTORY_LIMIT);
@@ -172,7 +191,8 @@ export async function POST(request: NextRequest) {
     profile,
     examples,
     weather,
-    !!kakaoMode
+    !!kakaoMode,
+    schedule
   );
 
   const claudeModel = CLAUDE_MODELS[model as string];

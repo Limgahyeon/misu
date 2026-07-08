@@ -39,6 +39,10 @@ export default function ProfileModal({
   const [pushState, setPushState] = useState<"unknown" | "on" | "off" | "unsupported">(
     "unknown"
   );
+  const [icsStatus, setIcsStatus] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
 
   useEffect(() => {
     const query = characterId ? `?characterId=${characterId}` : "";
@@ -161,6 +165,7 @@ export default function ProfileModal({
   async function save() {
     if (saving) return;
     setSaving(true);
+    setIcsStatus(null);
     await fetch("/api/profile", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -171,7 +176,7 @@ export default function ProfileModal({
       }),
     });
     if (!characterId) {
-      await fetch("/api/settings", {
+      const res = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -181,6 +186,24 @@ export default function ProfileModal({
           morning_time: morningTime,
         }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setIcsStatus({
+          ok: false,
+          text: data.error ?? "저장에 실패했어요. 잠시 뒤 다시 시도해주세요.",
+        });
+        setSaving(false);
+        return;
+      }
+      if (typeof data.ics_synced === "number") {
+        setIcsStatus({
+          ok: true,
+          text: `캘린더 연동 완료 💕 앞으로 7일 일정 ${data.ics_synced}개를 챙길게요`,
+        });
+        setSaving(false);
+        setTimeout(onClose, 1800);
+        return;
+      }
     }
     onClose();
   }
@@ -386,15 +409,25 @@ export default function ProfileModal({
                 📅 구글 캘린더 연동
               </p>
               <p className="text-[11px] text-zinc-400">
-                캘린더 설정 → 내 캘린더 → &quot;iCal 형식의 비밀 주소&quot;를
-                붙여넣으면 일정을 챙겨줘요
+                구글 캘린더 → 내 캘린더 ⋮ → 설정 및 공유 → 맨 아래 &quot;iCal
+                형식의 비밀 주소&quot;(…/private-…/basic.ics)를 붙여넣으면
+                일정을 챙겨줘요
               </p>
               <input
                 value={icsUrl}
                 onChange={(e) => setIcsUrl(e.target.value)}
-                placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"
+                placeholder="https://calendar.google.com/calendar/ical/…/private-…/basic.ics"
                 className="mt-2 w-full rounded-2xl border border-rose-100 bg-white px-4 py-2.5 text-xs text-zinc-700 outline-none placeholder:text-zinc-300 focus:border-rose-300"
               />
+              {icsStatus && (
+                <p
+                  className={`mt-1 px-1 text-[11px] ${
+                    icsStatus.ok ? "text-emerald-600" : "text-rose-500"
+                  }`}
+                >
+                  {icsStatus.text}
+                </p>
+              )}
             </div>
           </div>
         )}
