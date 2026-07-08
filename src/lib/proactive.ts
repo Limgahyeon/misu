@@ -30,15 +30,35 @@ const IDLE_MINUTES = 90;
 // 리마인더는 일정 이 시간(분) 전에 보낸다
 const REMIND_BEFORE_MIN = 30;
 
+// 모델이 후보를 여러 개 내놓은 경우('-- 또는' 등) 첫 번째 것만 남긴다
+function firstVariantOnly(text: string): string {
+  const lines = text.split("\n");
+  const cut = lines.findIndex(
+    (l) =>
+      /^\s*-{2,}\s*$/.test(l) ||
+      /^\s*(-{1,}\s*)?(또는|혹은|OR)\s*[:-]?\s*$/i.test(l.trim())
+  );
+  return (cut === -1 ? lines : lines.slice(0, cut)).join("\n").trim();
+}
+
 async function generateShort(system: string, ask: string): Promise<string> {
   const res = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 300,
     system,
-    messages: [{ role: "user", content: ask }],
+    messages: [
+      {
+        role: "user",
+        content: `${ask}
+
+중요: 실제로 보낼 최종 메시지 하나만 출력한다. 선택지나 대안("또는"), 설명, 구분선, 따옴표를 절대 쓰지 않는다.`,
+      },
+    ],
   });
   const block = res.content[0];
-  return block?.type === "text" ? stripTimeMeta(block.text.trim()) : "";
+  return block?.type === "text"
+    ? firstVariantOnly(stripTimeMeta(block.text.trim()))
+    : "";
 }
 
 // 선톡/리마인드 담당 — 설정(proactive_partner)에 지정된 캐릭터가 있으면 그가,

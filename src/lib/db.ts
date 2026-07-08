@@ -83,6 +83,12 @@ const initSql = `
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, key)
   );
+  CREATE TABLE IF NOT EXISTS user_read_state (
+    user_id INTEGER NOT NULL,
+    character_id TEXT NOT NULL,
+    last_read_id INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, character_id)
+  );
 `;
 
 async function init() {
@@ -228,7 +234,8 @@ export async function getRecentMessages(
   return result.rows as unknown as Message[];
 }
 
-// 채팅방 진입용 — 대화가 없으면 첫 장면을 심고, 최근 메시지만 돌려준다
+// 채팅방 진입용 — 대화가 없으면 첫 장면을 심고, 최근 메시지만 돌려준다.
+// 방에 들어온 것이므로 읽음 처리도 함께 한다.
 export async function getOrInitMessages(
   userId: number,
   character: Character,
@@ -239,7 +246,22 @@ export async function getOrInitMessages(
     await addMessage(userId, character.id, "assistant", character.firstScene);
     messages = await getRecentMessages(userId, character.id, limit);
   }
+  await markRead(userId, character.id);
   return messages;
+}
+
+// 읽음 처리 — 현재 마지막 메시지까지 읽은 것으로 기록
+export async function markRead(
+  userId: number,
+  characterId: string
+): Promise<void> {
+  await ready;
+  await db.execute({
+    sql: `INSERT INTO user_read_state (user_id, character_id, last_read_id)
+      VALUES (?, ?, COALESCE((SELECT MAX(id) FROM messages WHERE user_id = ? AND character_id = ?), 0))
+      ON CONFLICT(user_id, character_id) DO UPDATE SET last_read_id = excluded.last_read_id`,
+    args: [userId, characterId, userId, characterId],
+  });
 }
 
 export async function addMessage(
@@ -274,17 +296,24 @@ export interface ChatListRow {
   character_id: string;
   content: string;
   created_at: string;
+  unread: number;
 }
 
 export async function getChatList(userId: number): Promise<ChatListRow[]> {
   await ready;
   const result = await db.execute({
-    sql: `SELECT character_id, content, created_at FROM messages
-      WHERE id IN (
+    sql: `SELECT m.character_id, m.content, m.created_at,
+      (SELECT COUNT(*) FROM messages x
+        WHERE x.user_id = ? AND x.character_id = m.character_id AND x.role = 'assistant'
+          AND x.id > COALESCE((SELECT r.last_read_id FROM user_read_state r
+            WHERE r.user_id = ? AND r.character_id = m.character_id), 0)
+      ) AS unread
+      FROM messages m
+      WHERE m.id IN (
         SELECT MAX(id) FROM messages WHERE user_id = ? GROUP BY character_id
       )
-      ORDER BY id DESC`,
-    args: [userId],
+      ORDER BY m.id DESC`,
+    args: [userId, userId, userId],
   });
   return result.rows as unknown as ChatListRow[];
 }

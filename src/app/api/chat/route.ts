@@ -9,6 +9,7 @@ import {
   getOrInitMessages,
   getRecentMessages,
   getSnippets,
+  markRead,
   resetConversation,
 } from "@/lib/db";
 import { cosine, embed } from "@/lib/embedding";
@@ -201,6 +202,8 @@ export async function POST(request: NextRequest) {
         }
         if (full) {
           await addMessage(userId, character.id, "assistant", stripTimeMeta(full));
+          // 대화 중이므로 방금 답장까지 읽음 처리
+          await markRead(userId, character.id);
         }
         controller.close();
         after(() =>

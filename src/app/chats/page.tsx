@@ -61,7 +61,7 @@ export default async function ChatsPage() {
         </p>
       ) : (
         <ul className="flex flex-col">
-          {items.map(({ c, content, created_at }) => (
+          {items.map(({ c, content, created_at, unread }) => (
             <li key={c.id}>
               <Link
                 href={`/chat/${c.id}`}
@@ -90,9 +90,16 @@ export default async function ChatsPage() {
                       {formatTime(created_at)}
                     </span>
                   </div>
-                  <p className="mt-0.5 truncate text-sm text-zinc-500">
-                    {preview(content)}
-                  </p>
+                  <div className="mt-0.5 flex items-center justify-between gap-2">
+                    <p className="truncate text-sm text-zinc-500">
+                      {preview(content)}
+                    </p>
+                    {unread > 0 && (
+                      <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold leading-none text-white">
+                        {unread > 99 ? "99+" : unread}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </Link>
             </li>
