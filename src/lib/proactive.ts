@@ -18,6 +18,7 @@ import {
 import { sendPushToUser } from "./push";
 import { findCharacter } from "./resolve";
 import { stripTimeMeta } from "./text";
+import { getWeather } from "./weather";
 
 const anthropic = new Anthropic();
 
@@ -197,6 +198,78 @@ async function checkRemindersForUser(userId: number): Promise<number> {
   return sent;
 }
 
+// 모닝 브리핑 — 유저가 지정한 시간에 매일 날씨 + 오늘 일정 + 아침 인사
+async function maybeMorningBrief(userId: number): Promise<boolean> {
+  const timeSetting = await getSetting(userId, "morning_time");
+  if (!timeSetting || !/^\d{2}:\d{2}$/.test(timeSetting)) return false;
+
+  const nowKst = new Date().toLocaleTimeString("en-GB", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const toMin = (t: string) =>
+    Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+  const diff = toMin(nowKst) - toMin(timeSetting);
+  // 지정 시간부터 15분 안에 들어온 하트비트에서만 발송 (10분 주기 대비 여유)
+  if (diff < 0 || diff >= 15) return false;
+
+  const today = new Date().toLocaleDateString("sv-SE", {
+    timeZone: "Asia/Seoul",
+  });
+  if ((await getSetting(userId, "morning_stamp")) === today) return false;
+
+  const partner = await currentPartner(userId);
+  if (!partner) return false;
+
+  // 마지막 대화 위치 기준 날씨 (없으면 서울)
+  const geo = (await getSetting(userId, "geo"))?.split(",") ?? [];
+  const [profile, memory, weather, schedule] = await Promise.all([
+    getEffectiveProfile(userId, partner.id),
+    getMemory(userId, partner.id),
+    getWeather(geo[0] || "37.5665", geo[1] || "126.978", geo[2] || undefined),
+    getUpcomingAppointments(userId, 18),
+  ]);
+
+  const scheduleText =
+    schedule.length > 0
+      ? schedule
+          .map((a) => {
+            const d = new Date(a.at.replace(" ", "T") + "Z");
+            return `${a.title} (${d.toLocaleString("ko-KR", {
+              timeZone: "Asia/Seoul",
+              hour: "numeric",
+              minute: "2-digit",
+            })})`;
+          })
+          .join(", ")
+      : "없음";
+
+  try {
+    const text = await generateShort(
+      partnerSystem(partner, profile, memory?.summary),
+      `아침이야. 유저에게 하루를 시작하는 모닝 브리핑 카톡을 보내줘.
+- 오늘 날씨: ${weather ?? "정보 없음"} — 날씨에 맞는 한마디 (비 오면 우산, 더우면 시원하게 등)
+- 오늘 일정: ${scheduleText} — 일정이 있으면 짚어주고, 없으면 언급하지 않아도 됨
+- 남자친구다운 다정한 아침 인사와 응원으로 마무리
+2~3개의 짧은 메시지로.`
+    );
+    if (!text) return false;
+
+    await addMessage(userId, partner.id, "assistant", text);
+    await saveSetting(userId, "morning_stamp", today);
+    await sendPushToUser(userId, {
+      title: partner.name,
+      body: text.split("\n")[0].slice(0, 120),
+      url: `/chat/${partner.id}`,
+    });
+    return true;
+  } catch (err) {
+    console.error("morning brief failed:", err);
+    return false;
+  }
+}
+
 // 선톡 — 활동 시간대에, 유저가 조용할 때, 하루 한도 내에서 확률적으로.
 // callsPerHour: 하트비트 호출 빈도 — 자주 호출될수록 회당 확률을 낮춰
 // 하루 목표 횟수가 활동 시간대에 고르게 퍼지도록 한다.
@@ -305,6 +378,7 @@ export async function runHeartbeat(
     try {
       await syncCalendarForUser(user.id);
       reminders += await checkRemindersForUser(user.id);
+      if (await maybeMorningBrief(user.id)) proactive++;
       if (
         wantProactive &&
         (await maybeProactiveForUser(

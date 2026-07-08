@@ -26,6 +26,7 @@ export default function ProfileModal({
   const [userName, setUserName] = useState("");
   const [fallbackName, setFallbackName] = useState("");
   const [partner, setPartner] = useState("");
+  const [morningTime, setMorningTime] = useState("");
   const [allCharacters, setAllCharacters] = useState<
     { id: string; name: string }[]
   >([]);
@@ -53,6 +54,7 @@ export default function ProfileModal({
           setIcsUrl(data.ics_url ?? "");
           setUserName(data.user_name ?? "");
           setPartner(data.proactive_partner ?? "");
+          setMorningTime(data.morning_time ?? "");
         });
       fetch("/api/characters")
         .then((r) => r.json())
@@ -137,6 +139,7 @@ export default function ProfileModal({
           ics_url: icsUrl,
           user_name: userName,
           proactive_partner: partner,
+          morning_time: morningTime,
         }),
       });
     }
@@ -242,6 +245,35 @@ export default function ProfileModal({
                   </option>
                 ))}
               </select>
+            </div>
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-zinc-700">
+                    ☀️ 모닝 브리핑
+                  </p>
+                  <p className="text-[11px] text-zinc-400">
+                    매일 이 시간에 날씨·오늘 일정과 함께 아침 톡이 와요
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <input
+                    type="time"
+                    value={morningTime}
+                    onChange={(e) => setMorningTime(e.target.value)}
+                    className="rounded-xl border border-rose-100 bg-white px-2.5 py-1.5 text-sm text-zinc-700 outline-none focus:border-rose-300"
+                  />
+                  {morningTime && (
+                    <button
+                      type="button"
+                      onClick={() => setMorningTime("")}
+                      className="text-xs text-zinc-400 hover:text-rose-400"
+                    >
+                      끄기
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
             <div>
               <p className="text-sm font-semibold text-zinc-700">

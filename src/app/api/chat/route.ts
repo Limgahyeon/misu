@@ -11,6 +11,7 @@ import {
   getSnippets,
   markRead,
   resetConversation,
+  saveSetting,
 } from "@/lib/db";
 import { cosine, embed } from "@/lib/embedding";
 import { updateMemoryIfNeeded } from "@/lib/memory";
@@ -210,6 +211,10 @@ export async function POST(request: NextRequest) {
           Promise.all([
             updateMemoryIfNeeded(userId, character),
             extractAppointmentIfAny(userId, message.trim()),
+            // 모닝 브리핑 날씨용 — 실제 위치 헤더가 있을 때만 저장
+            rawCity
+              ? saveSetting(userId, "geo", `${lat},${lon},${city ?? ""}`)
+              : Promise.resolve(),
           ])
         );
       } catch (err) {

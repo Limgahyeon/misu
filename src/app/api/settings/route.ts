@@ -7,6 +7,7 @@ const ALLOWED_KEYS = [
   "proactive_per_day",
   "user_name",
   "proactive_partner",
+  "morning_time",
 ];
 
 export async function GET(request: NextRequest) {
@@ -14,17 +15,19 @@ export async function GET(request: NextRequest) {
   if (!userId) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
-  const [icsUrl, perDay, userName, partner] = await Promise.all([
+  const [icsUrl, perDay, userName, partner, morning] = await Promise.all([
     getSetting(userId, "ics_url"),
     getSetting(userId, "proactive_per_day"),
     getSetting(userId, "user_name"),
     getSetting(userId, "proactive_partner"),
+    getSetting(userId, "morning_time"),
   ]);
   return Response.json({
     ics_url: icsUrl ?? "",
     proactive_per_day: perDay ?? "",
     user_name: userName ?? "",
     proactive_partner: partner ?? "",
+    morning_time: morning ?? "",
   });
 }
 
