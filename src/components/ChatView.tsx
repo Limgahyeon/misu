@@ -77,10 +77,16 @@ const MODEL_IDS = MODELS.map((m) => m.id) as string[];
 export default function ChatView({
   character,
   initialMessages,
+  allowPaidModels = true,
 }: {
   character: CharacterInfo;
   initialMessages?: ChatMessage[];
+  allowPaidModels?: boolean;
 }) {
+  // 친구 계정은 sonnet 비노출 (서버에서도 haiku로 강제되지만 UI에서부터 숨긴다)
+  const visibleModels = allowPaidModels
+    ? MODELS
+    : MODELS.filter((m) => m.id !== "sonnet");
   const [messages, setMessages] = useState<ChatMessage[]>(
     initialMessages ?? []
   );
@@ -142,12 +148,18 @@ export default function ChatView({
 
   useEffect(() => {
     const saved = localStorage.getItem("misu-model");
-    if (saved === "claude" || saved === "opus") setModel("sonnet");
-    else if (saved && MODEL_IDS.includes(saved)) setModel(saved as ModelId);
+    if ((saved === "claude" || saved === "opus") && allowPaidModels)
+      setModel("sonnet");
+    else if (saved && MODEL_IDS.includes(saved)) {
+      // 예전에 sonnet을 골라뒀던 친구 계정은 haiku로
+      const coerced =
+        !allowPaidModels && saved === "sonnet" ? "haiku" : (saved as ModelId);
+      setModel(coerced);
+    }
     setKakaoMode(localStorage.getItem(`misu-kakao-${character.id}`) === "1");
     // 터치 기기면 엔터 = 줄바꿈, 전송은 버튼 (카톡과 동일)
     coarsePointer.current = window.matchMedia("(pointer: coarse)").matches;
-  }, [character.id]);
+  }, [character.id, allowPaidModels]);
 
   const toggleKakaoMode = useCallback(() => {
     setKakaoMode((v) => {
@@ -513,7 +525,7 @@ export default function ChatView({
       <div className="flex items-center gap-2 border-t border-white/60 bg-white/60 px-4 pt-2.5 backdrop-blur-md">
         <span className="text-xs text-zinc-400">모델</span>
         <div className="flex gap-1 rounded-xl bg-rose-50/80 p-0.5">
-          {MODELS.map((m) => (
+          {visibleModels.map((m) => (
             <button
               key={m.id}
               onClick={() => selectModel(m.id)}

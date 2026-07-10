@@ -42,6 +42,10 @@ next-env.d.ts
 
 # local database
 misu.db*
+misu-dev.db*
+
+# DB 백업 덤프 — 사적 대화가 담기므로 절대 커밋 금지
+/backups
 
 .vercel
 .env*

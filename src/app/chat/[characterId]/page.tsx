@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getUserId } from "@/lib/auth";
 import { getOrInitMessages } from "@/lib/db";
+import { OWNER_USER_ID } from "@/lib/limits";
 import { findCharacter } from "@/lib/resolve";
 import ChatView from "@/components/ChatView";
 
@@ -36,6 +37,7 @@ export default async function ChatPage({
         content: m.content,
         createdAt: m.created_at,
       }))}
+      allowPaidModels={userId === OWNER_USER_ID}
     />
   );
 }

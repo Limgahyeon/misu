@@ -4,6 +4,7 @@ import { after, NextRequest } from "next/server";
 import { getUserIdFromRequest } from "@/lib/auth";
 import {
   addMessage,
+  countUserMessagesSince,
   getEffectiveProfile,
   getMemory,
   getOrInitMessages,
@@ -14,6 +15,11 @@ import {
   resetConversation,
   saveSetting,
 } from "@/lib/db";
+import {
+  DAILY_MESSAGE_LIMIT,
+  kstDayStartUtc,
+  OWNER_USER_ID,
+} from "@/lib/limits";
 import { cosine, embed } from "@/lib/embedding";
 import { updateMemoryIfNeeded } from "@/lib/memory";
 import { buildContextNote, buildSystemPrompt } from "@/lib/prompt";
@@ -191,6 +197,18 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "invalid request" }, { status: 400 });
   }
 
+  // 비용 안전장치 — 친구 계정은 하루 한도. 한도 도달 시 메시지를 저장하지 않고
+  // 안내 문구만 돌려준다 (스트리밍과 같은 text/plain이라 말풍선에 그대로 뜬다)
+  if (userId !== OWNER_USER_ID) {
+    const sentToday = await countUserMessagesSince(userId, kstDayStartUtc());
+    if (sentToday >= DAILY_MESSAGE_LIMIT) {
+      return new Response(
+        "(오늘 나눌 수 있는 대화를 다 썼어요. 자정에 다시 채워져요 🌙 내일 만나요!)",
+        { headers: { "Content-Type": "text/plain; charset=utf-8" } }
+      );
+    }
+  }
+
   await addMessage(userId, character.id, "user", message.trim());
 
   // IP 기반 위치 (Vercel 헤더). 로컬 dev 등 헤더가 없으면 서울로 폴백
@@ -245,7 +263,10 @@ export async function POST(request: NextRequest) {
   );
   const note = buildContextNote(weather, schedule, examples);
 
-  const claudeModel = CLAUDE_MODELS[model as string];
+  // 친구 계정은 유료 모델 중 haiku만 (sonnet 요청은 조용히 haiku로)
+  const requested = CLAUDE_MODELS[model as string];
+  const claudeModel =
+    requested && userId !== OWNER_USER_ID ? CLAUDE_MODELS.haiku : requested;
   const usingGemini = !claudeModel && Date.now() > geminiCooldownUntil;
   const textStream = usingGemini
     ? streamGemini(system, timed, note)

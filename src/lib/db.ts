@@ -1,10 +1,20 @@
 import { createClient } from "@libsql/client";
+import { createHash } from "node:crypto";
 import { Character } from "./characters";
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL ?? "file:misu.db",
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+// 로컬 개발(next dev)은 기본적으로 로컬 파일 DB를 쓴다 — 테스트가 실서비스
+// 데이터를 오염시키지 않게. 실DB가 정말 필요한 로컬 작업만 MISU_PROD_DB=1로 켠다.
+const useProdDb =
+  process.env.NODE_ENV === "production" || process.env.MISU_PROD_DB === "1";
+
+const db = createClient(
+  useProdDb
+    ? {
+        url: process.env.TURSO_DATABASE_URL ?? "file:misu.db",
+        authToken: process.env.TURSO_AUTH_TOKEN,
+      }
+    : { url: "file:misu-dev.db" }
+);
 
 const initSql = `
   CREATE TABLE IF NOT EXISTS users (
@@ -136,6 +146,16 @@ async function init() {
       "CREATE INDEX IF NOT EXISTS idx_messages_user_character ON messages (user_id, character_id, id)"
     )
     .catch(() => {});
+  // 개발용 파일 DB는 비어 있으므로 접속 코드 'dev'인 유저를 심어둔다
+  if (!useProdDb) {
+    const devHash = createHash("sha256").update("dev").digest("hex");
+    await db
+      .execute({
+        sql: "INSERT OR IGNORE INTO users (name, code_hash) VALUES ('개발용', ?)",
+        args: [devHash],
+      })
+      .catch(() => {});
+  }
 }
 
 // 초기화가 일시 오류(네트워크 등)로 실패해도 인스턴스 전체가 죽지 않게 한다.
@@ -250,6 +270,19 @@ export async function markRead(
       ON CONFLICT(user_id, character_id) DO UPDATE SET last_read_id = excluded.last_read_id`,
     args: [userId, characterId, userId, characterId],
   });
+}
+
+// 오늘(KST) 보낸 유저 메시지 수 — 하루 한도 체크용
+export async function countUserMessagesSince(
+  userId: number,
+  sinceUtc: string
+): Promise<number> {
+  await ready;
+  const result = await db.execute({
+    sql: "SELECT COUNT(*) AS n FROM messages WHERE user_id = ? AND role = 'user' AND created_at >= ?",
+    args: [userId, sinceUtc],
+  });
+  return Number(result.rows[0]?.n ?? 0);
 }
 
 export async function addMessage(
