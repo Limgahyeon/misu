@@ -1,0 +1,4 @@
+# 배포 업로드 제외 — 사적 데이터가 Vercel 소스에 딸려가지 않게
+backups
+misu.db*
+misu-dev.db*
