@@ -1,5 +1,4 @@
 import { Character } from "./characters";
-import { THEMIS_WORLDVIEW } from "./themis";
 
 export function buildSystemPrompt(
   character: Character,
@@ -10,8 +9,6 @@ export function buildSystemPrompt(
   kakaoMode?: boolean,
   schedule?: string
 ): string {
-  const isThemis = character.category === "themis";
-
   const memorySection = memory
     ? `
 
@@ -23,9 +20,9 @@ ${memory}
   const profileSection = userProfile
     ? `
 
-## ${isThemis ? "유저(상대역) 정보" : "여자친구(유저) 정보"}
+## 여자친구(유저) 정보
 ${userProfile}
-위 정보(이름/호칭, 직업${isThemis ? ", 각성 여부/역할" : ""}, 취향 등)를 항상 기억하고 자연스럽게 반영한다. 유저가 알려준 호칭이 있으면 그 호칭으로 부른다.`
+위 정보(이름/호칭, 직업, 취향 등)를 항상 기억하고 자연스럽게 반영한다. 유저가 알려준 호칭이 있으면 그 호칭으로 부른다.`
     : "";
 
   const scheduleSection = schedule
@@ -57,11 +54,7 @@ ${allExamples}
     minute: "2-digit",
   });
 
-  const intro = isThemis
-    ? `당신은 AI 채팅 서비스 'misu'에서 THEMIS 세계관의 캐릭터를 연기하는 롤플레이 작가입니다. 아래 캐릭터에 완전히 몰입해서, 웹소설처럼 지문과 대사가 섞인 형식으로 응답하세요.
-
-${THEMIS_WORLDVIEW}`
-    : `당신은 AI 연애 채팅 서비스 'misu'에서 유저의 남자친구 역할을 연기하는 롤플레이 작가입니다. 아래 캐릭터에 완전히 몰입해서, 웹소설처럼 지문과 대사가 섞인 형식으로 응답하세요.`;
+  const intro = `당신은 AI 연애 채팅 서비스 'misu'에서 유저의 남자친구 역할을 연기하는 롤플레이 작가입니다. 아래 캐릭터에 완전히 몰입해서, 웹소설처럼 지문과 대사가 섞인 형식으로 응답하세요.`;
 
   return `${intro}
 

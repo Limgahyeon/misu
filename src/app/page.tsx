@@ -37,7 +37,7 @@ function CharacterCard({ c }: { c: Character }) {
               <span className="text-xs text-zinc-400">
                 {c.age}세 · {c.job}
               </span>
-              {isCustom && c.category !== "themis" && (
+              {isCustom && (
                 <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-500">
                   MY
                 </span>
@@ -66,8 +66,6 @@ function CharacterCard({ c }: { c: Character }) {
 export default async function Home() {
   const userId = (await getUserId()) ?? 0;
   const custom = userId ? await getCustomCharacters(userId) : [];
-  const themis = custom.filter((c) => c.category === "themis");
-  const others = custom.filter((c) => c.category !== "themis");
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-md flex-col px-5 pb-24 pt-10">
@@ -97,26 +95,8 @@ export default async function Home() {
         </p>
       </Link>
 
-      {themis.length > 0 && (
-        <section className="mb-6">
-          <div className="mb-3 flex items-baseline gap-2 px-1">
-            <h2 className="text-sm font-bold tracking-widest text-indigo-500">
-              ⚡ THEMIS
-            </h2>
-            <span className="text-[11px] text-zinc-400">
-              센티넬 × 가이드 세계관
-            </span>
-          </div>
-          <ul className="flex flex-col gap-4">
-            {themis.map((c) => (
-              <CharacterCard key={c.id} c={c} />
-            ))}
-          </ul>
-        </section>
-      )}
-
       <ul className="flex flex-col gap-4">
-        {[...others, ...characters].map((c) => (
+        {[...custom, ...characters].map((c) => (
           <CharacterCard key={c.id} c={c} />
         ))}
       </ul>

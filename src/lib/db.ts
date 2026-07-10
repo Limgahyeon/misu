@@ -109,9 +109,6 @@ async function init() {
   await db
     .execute("ALTER TABLE characters ADD COLUMN dialog_examples TEXT")
     .catch(() => {});
-  await db
-    .execute("ALTER TABLE characters ADD COLUMN category TEXT")
-    .catch(() => {});
   // 멀티유저 전환 — 기존 데이터는 전부 유저 1 소유로
   await db
     .execute("ALTER TABLE messages ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1")
@@ -344,7 +341,6 @@ function rowToCharacter(row: Record<string, unknown>): Character {
     firstScene: row.first_scene as string,
     avatar: (row.avatar as string | null) ?? undefined,
     dialogExamples: (row.dialog_examples as string | null) ?? undefined,
-    category: (row.category as string | null) ?? undefined,
   };
 }
 
@@ -378,8 +374,8 @@ export async function createCustomCharacter(
   const id = `c_${crypto.randomUUID().slice(0, 8)}`;
   await db.execute({
     sql: `INSERT INTO characters
-      (id, user_id, name, age, job, emoji, gradient, tagline, personality, speech_style, relationship, first_scene, avatar, dialog_examples, category)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, user_id, name, age, job, emoji, gradient, tagline, personality, speech_style, relationship, first_scene, avatar, dialog_examples)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       id,
       userId,
@@ -395,7 +391,6 @@ export async function createCustomCharacter(
       c.firstScene,
       c.avatar ?? null,
       c.dialogExamples ?? null,
-      c.category ?? null,
     ],
   });
   return id;
@@ -410,7 +405,7 @@ export async function updateCustomCharacter(
   await db.execute({
     sql: `UPDATE characters SET
       name = ?, age = ?, job = ?, emoji = ?, gradient = ?, tagline = ?,
-      personality = ?, speech_style = ?, relationship = ?, first_scene = ?, avatar = ?, dialog_examples = ?, category = ?
+      personality = ?, speech_style = ?, relationship = ?, first_scene = ?, avatar = ?, dialog_examples = ?
       WHERE id = ? AND user_id = ?`,
     args: [
       c.name,
@@ -425,7 +420,6 @@ export async function updateCustomCharacter(
       c.firstScene,
       c.avatar ?? null,
       c.dialogExamples ?? null,
-      c.category ?? null,
       id,
       userId,
     ],

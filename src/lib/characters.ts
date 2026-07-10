@@ -12,7 +12,6 @@ export interface Character {
   firstScene: string;
   avatar?: string;
   dialogExamples?: string;
-  category?: string; // "themis" 등 세계관 분류. 없으면 일반 캐릭터
 }
 
 export const characters: Character[] = [
