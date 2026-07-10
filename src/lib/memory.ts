@@ -18,7 +18,7 @@ async function summarize(prompt: string): Promise<string | undefined> {
     const result = await gemini.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
-      config: { maxOutputTokens: 2048 },
+      config: { maxOutputTokens: 4096 },
     });
     const text = result.text?.trim();
     if (text) return text;
@@ -28,7 +28,7 @@ async function summarize(prompt: string): Promise<string | undefined> {
   try {
     const res = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 2048,
+      max_tokens: 4096,
       messages: [{ role: "user", content: prompt }],
     });
     const block = res.content[0];
@@ -73,7 +73,7 @@ ${transcript}
 규칙:
 - 기존 기억에 있는 사실을 함부로 버리지 않는다. 특히 [유저 프로필]과 [약속과 계획]은 유지하고 갱신만 한다.
 - 분량이 넘치면 [최근 흐름]의 오래된 항목부터 압축한다.
-- 전체 1500자 이내, 간결한 목록 형태로 기억 내용만 출력한다.`;
+- 전체 3000자 이내, 간결한 목록 형태로 기억 내용만 출력한다.`;
 
   const summary = await summarize(prompt);
   if (summary) {

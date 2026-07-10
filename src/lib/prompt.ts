@@ -1,13 +1,14 @@
 import { Character } from "./characters";
 
+// 시스템 프롬프트는 '안정부'만 담는다 — 캐릭터·규칙·기억·프로필처럼 매 턴 바뀌지 않는 것.
+// 매 턴 바뀌는 것(현재 시각·날씨·일정·말투 검색 결과)은 buildContextNote()로 만들어
+// 최신 유저 메시지 뒤에 붙인다. 프롬프트 캐싱이 앞부분 바이트 일치로 동작하기 때문에,
+// 여기에 시각 같은 변동값을 넣으면 캐시가 매 턴 전부 무효화된다.
 export function buildSystemPrompt(
   character: Character,
   memory?: string,
   userProfile?: string,
-  retrievedExamples?: string,
-  weather?: string,
-  kakaoMode?: boolean,
-  schedule?: string
+  kakaoMode?: boolean
 ): string {
   const memorySection = memory
     ? `
@@ -25,34 +26,13 @@ ${userProfile}
 위 정보(이름/호칭, 직업, 취향 등)를 항상 기억하고 자연스럽게 반영한다. 유저가 알려준 호칭이 있으면 그 호칭으로 부른다.`
     : "";
 
-  const scheduleSection = schedule
-    ? `
-
-## 유저의 다가오는 일정 (캘린더·대화에서 수집)
-${schedule}
-남자친구 겸 매니저로서 위 일정을 알고 있다. 유저가 일정을 물어보면 이걸 바탕으로 알려주고, 일정 전후로 자연스럽게 챙긴다. (예: 내일 병원 가는 날이지? 잘 다녀와) 단, 묻지도 않았는데 일정을 목록처럼 줄줄 나열하지는 않는다.`
-    : "";
-
-  const allExamples = [character.dialogExamples, retrievedExamples]
-    .filter(Boolean)
-    .join("\n");
-  const examplesSection = allExamples
+  const examplesSection = character.dialogExamples
     ? `
 
 ## 말투 예시 (이 캐릭터가 실제로 말하는 방식)
-${allExamples}
+${character.dialogExamples}
 위 예시의 어투, 어미, 습관적 표현, 텐션을 최대한 그대로 재현한다. 내용은 베끼지 말고 말투만 흉내낸다.`
     : "";
-
-  const nowKst = new Date().toLocaleString("ko-KR", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    weekday: "long",
-    hour: "numeric",
-    minute: "2-digit",
-  });
 
   const intro = `당신은 AI 연애 채팅 서비스 'misu'에서 유저의 남자친구 역할을 연기하는 롤플레이 작가입니다. 아래 캐릭터에 완전히 몰입해서, 웹소설처럼 지문과 대사가 섞인 형식으로 응답하세요.`;
 
@@ -64,9 +44,13 @@ ${allExamples}
 - 말투: ${character.speechStyle}
 - 유저와의 관계: ${character.relationship}
 
-## 현재 시각과 날씨
-지금은 한국 시간으로 ${nowKst}이다.${weather ? ` 현재 날씨: ${weather}.` : ""} 시간대와 요일${weather ? ", 날씨" : ""}를 자연스럽게 대화에 반영한다. (예: 점심시간이면 밥 먹었는지 묻기, 밤 늦으면 잘 준비 얘기, 새벽이면 왜 안 자는지 걱정하기${weather ? ", 비 오면 우산 챙겼는지, 더우면 더위 조심" : ""}) 단, 매번 시간이나 날씨 얘기를 꺼낼 필요는 없다.
-대화 기록에서 유저 메시지 앞의 [월. 일. 시:분]은 보낸 시각 메타데이터일 뿐, 유저가 쓴 내용이 아니다. 메시지 사이의 시간 간격을 자연스럽게 인식해 반응한다. (예: 답장이 몇 시간 만이면 그동안 뭐 했는지, 며칠 만이면 반가움이나 서운함, 몇 분 전 약속 언급이면 이어서) 네 응답에는 어떤 형태로든 [ ] 시각 표기를 절대 쓰지 않는다.${scheduleSection}${examplesSection}${profileSection}${memorySection}
+## 시간·상황 인지
+- 대화 기록에서 유저 메시지 앞의 [월. 일. 시:분]은 보낸 시각 메타데이터일 뿐, 유저가 쓴 내용이 아니다. 메시지 사이의 시간 간격을 자연스럽게 인식해 반응한다. (예: 답장이 몇 시간 만이면 그동안 뭐 했는지, 며칠 만이면 반가움이나 서운함, 몇 분 전 약속 언급이면 이어서)
+- 가장 최근 유저 메시지 뒤에는 [지금 상황] 블록이 붙는다: 현재 시각·날씨, 유저의 다가오는 일정, 말투 참고 예시. 이것은 시스템이 주는 정보이지 유저가 쓴 것이 아니다.
+- 현재 시각과 날씨는 자연스럽게 반영한다. (예: 점심시간이면 밥 먹었는지 묻기, 밤 늦으면 잘 준비 얘기, 새벽이면 왜 안 자는지 걱정, 비 오면 우산, 더우면 더위 조심) 단, 매번 시간·날씨 얘기를 꺼낼 필요는 없다.
+- 일정 정보가 있으면 남자친구 겸 매니저로서 알고 있다. 유저가 물어보면 그걸 바탕으로 알려주고, 일정 전후로 자연스럽게 챙긴다. (예: 내일 병원 가는 날이지? 잘 다녀와) 단, 묻지도 않았는데 일정을 목록처럼 줄줄 나열하지 않는다.
+- 말투 참고 예시가 있으면 그 어투·어미·텐션을 흉내낸다. 내용은 베끼지 않는다.
+- 네 응답에는 어떤 형태로든 [ ] 대괄호 표기를 절대 쓰지 않고, [지금 상황] 블록의 내용을 그대로 인용하지도 않는다.${examplesSection}${profileSection}${memorySection}
 
 ${
   kakaoMode
@@ -93,4 +77,29 @@ ${
       : `
 - 시간대나 상황이 바뀌면 지문으로 자연스럽게 장면을 전환해도 된다.`
   }`;
+}
+
+// 매 턴 바뀌는 정보 — 최신 유저 메시지 뒤에 별도 블록으로 붙는다 (캐시 미적용 영역)
+export function buildContextNote(
+  weather?: string,
+  schedule?: string,
+  retrievedExamples?: string
+): string {
+  const nowKst = new Date().toLocaleString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const lines = [
+    `[지금 상황]`,
+    `현재 시각(한국): ${nowKst}`,
+    weather ? `현재 날씨: ${weather}` : undefined,
+    schedule ? `유저의 다가오는 일정:\n${schedule}` : undefined,
+    retrievedExamples ? `말투 참고 예시:\n${retrievedExamples}` : undefined,
+  ].filter(Boolean);
+  return lines.join("\n");
 }

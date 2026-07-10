@@ -88,55 +88,6 @@ ${profile ? `- 유저 정보: ${profile}\n` : ""}${memory ? `- 기억: ${memory}
 카카오톡 문자처럼 짧게 씁니다. 지문(*별표*) 없이, 1~3개의 짧은 메시지를 줄바꿈으로 구분. 캐릭터 말투 그대로.`;
 }
 
-// 유저 메시지에 시간 표현이 있을 때만 LLM으로 약속을 추출한다 (비용 절약)
-const TIME_HINT =
-  /(\d{1,2}\s*시|\d{1,2}:\d{2}|내일|모레|글피|오늘|이번\s*주|다음\s*주|약속|예약|미팅|회의|면접|월요일|화요일|수요일|목요일|금요일|토요일|일요일|주말|오전|오후|저녁|아침|점심|밤)/;
-
-export async function extractAppointmentIfAny(
-  userId: number,
-  userMessage: string
-): Promise<void> {
-  if (!TIME_HINT.test(userMessage)) return;
-  const nowKst = new Date().toLocaleString("sv-SE", {
-    timeZone: "Asia/Seoul",
-  });
-  try {
-    const res = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 300,
-      messages: [
-        {
-          role: "user",
-          content: `현재 한국 시간: ${nowKst}
-유저 메시지: "${userMessage}"
-
-이 메시지에서 유저 본인의 확정된 약속/일정(구체적 날짜·시각이 특정 가능한 것)만 추출해 JSON 배열로 출력하세요.
-형식: [{"title":"일정 이름","datetime":"YYYY-MM-DD HH:MM"}] (한국 시간 기준)
-상대 표현(내일, 이번 주 금요일 등)은 현재 시간 기준으로 계산합니다. 과거이거나 시각이 불명확하면 제외. 없으면 [] 만 출력.`,
-        },
-      ],
-    });
-    const block = res.content[0];
-    if (block?.type !== "text") return;
-    const match = block.text.match(/\[[\s\S]*\]/);
-    if (!match) return;
-    const items = JSON.parse(match[0]) as { title?: string; datetime?: string }[];
-    for (const it of items.slice(0, 3)) {
-      if (!it.title || !it.datetime) continue;
-      const utc = new Date(`${it.datetime.replace(" ", "T")}:00+09:00`);
-      if (isNaN(utc.getTime()) || utc.getTime() < Date.now()) continue;
-      await addAppointment(
-        userId,
-        it.title,
-        utc.toISOString().slice(0, 19).replace("T", " "),
-        "chat"
-      );
-    }
-  } catch (err) {
-    console.error("appointment extract failed:", err);
-  }
-}
-
 // ICS 캘린더 동기화 — 앞으로 7일치 일정을 appointments에 반영
 export async function syncCalendarForUser(userId: number): Promise<void> {
   const url = await getSetting(userId, "ics_url");

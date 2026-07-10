@@ -16,8 +16,7 @@ import {
 } from "@/lib/db";
 import { cosine, embed } from "@/lib/embedding";
 import { updateMemoryIfNeeded } from "@/lib/memory";
-import { extractAppointmentIfAny } from "@/lib/proactive";
-import { buildSystemPrompt } from "@/lib/prompt";
+import { buildContextNote, buildSystemPrompt } from "@/lib/prompt";
 import { findCharacter } from "@/lib/resolve";
 import { stripTimeMeta } from "@/lib/text";
 import { getWeather } from "@/lib/weather";
@@ -74,16 +73,21 @@ async function retrieveExamples(
   }
 }
 
-async function* streamGemini(system: string, history: History) {
+async function* streamGemini(system: string, history: History, note: string) {
   const stream = await gemini.models.generateContentStream({
     model: "gemini-2.5-flash",
     config: {
       systemInstruction: system,
       maxOutputTokens: 1024,
     },
-    contents: history.map((m) => ({
+    contents: history.map((m, i) => ({
       role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content }],
+      parts: [
+        {
+          text:
+            i === history.length - 1 ? `${m.content}\n\n${note}` : m.content,
+        },
+      ],
     })),
   });
   for await (const chunk of stream) {
@@ -91,21 +95,69 @@ async function* streamGemini(system: string, history: History) {
   }
 }
 
-async function* streamClaude(model: string, system: string, history: History) {
+async function* streamClaude(
+  model: string,
+  system: string,
+  history: History,
+  note: string
+) {
+  // 프롬프트 캐싱: 브레이크포인트 2개.
+  // ① 시스템(안정부) 끝 ② 직전 메시지 끝(과거 히스토리까지 캐시).
+  // 변동 정보(note)는 최신 유저 메시지의 별도 블록 — 히스토리 재구성 시
+  // 이 블록은 다시 안 붙으므로 과거 프리픽스의 바이트가 변하지 않는다.
+  const messages: Anthropic.MessageParam[] = history.map((m, i) => {
+    if (i === history.length - 1) {
+      const blocks: Anthropic.TextBlockParam[] = [
+        { type: "text", text: m.content },
+      ];
+      if (note) blocks.push({ type: "text", text: note });
+      return { role: m.role, content: blocks };
+    }
+    if (i === history.length - 2) {
+      return {
+        role: m.role,
+        content: [
+          {
+            type: "text" as const,
+            text: m.content,
+            cache_control: { type: "ephemeral" as const },
+          },
+        ],
+      };
+    }
+    return { role: m.role, content: m.content };
+  });
+
   const stream = anthropic.messages.stream({
     model,
     max_tokens: 1024,
-    system,
-    messages: history,
+    system: [
+      { type: "text", text: system, cache_control: { type: "ephemeral" } },
+    ],
+    messages,
   });
+
+  let usage: Record<string, number | null | undefined> = {};
   for await (const event of stream) {
-    if (
+    if (event.type === "message_start") {
+      usage = { ...event.message.usage } as typeof usage;
+    } else if (event.type === "message_delta") {
+      usage.output_tokens = event.usage.output_tokens;
+    } else if (
       event.type === "content_block_delta" &&
       event.delta.type === "text_delta"
     ) {
       yield event.delta.text;
     }
   }
+  // 캐시 적중 검증용 — cache_read가 0이면 캐시가 안 걸리고 있다는 뜻
+  console.log(
+    `[usage] model=${model} in=${usage.input_tokens ?? "?"} cache_read=${
+      usage.cache_read_input_tokens ?? 0
+    } cache_write=${usage.cache_creation_input_tokens ?? 0} out=${
+      usage.output_tokens ?? "?"
+    }`
+  );
 }
 
 export async function GET(request: NextRequest) {
@@ -189,17 +241,15 @@ export async function POST(request: NextRequest) {
     character,
     memory?.summary,
     profile,
-    examples,
-    weather,
-    !!kakaoMode,
-    schedule
+    !!kakaoMode
   );
+  const note = buildContextNote(weather, schedule, examples);
 
   const claudeModel = CLAUDE_MODELS[model as string];
   const usingGemini = !claudeModel && Date.now() > geminiCooldownUntil;
   const textStream = usingGemini
-    ? streamGemini(system, timed)
-    : streamClaude(claudeModel ?? CLAUDE_MODELS.haiku, system, timed);
+    ? streamGemini(system, timed, note)
+    : streamClaude(claudeModel ?? CLAUDE_MODELS.haiku, system, timed, note);
 
   const encoder = new TextEncoder();
   const body = new ReadableStream({
@@ -219,7 +269,7 @@ export async function POST(request: NextRequest) {
           if (full || !usingGemini) throw err;
           geminiCooldownUntil = Date.now() + GEMINI_COOLDOWN_MS;
           console.error("gemini failed, falling back to haiku:", err);
-          await pump(streamClaude(CLAUDE_MODELS.haiku, system, timed));
+          await pump(streamClaude(CLAUDE_MODELS.haiku, system, timed, note));
         }
         if (full) {
           await addMessage(userId, character.id, "assistant", stripTimeMeta(full));
@@ -230,7 +280,6 @@ export async function POST(request: NextRequest) {
         after(() =>
           Promise.all([
             updateMemoryIfNeeded(userId, character),
-            extractAppointmentIfAny(userId, message.trim()),
             // 모닝 브리핑 날씨용 — 실제 위치 헤더가 있을 때만 저장
             rawCity
               ? saveSetting(userId, "geo", `${lat},${lon},${city ?? ""}`)
