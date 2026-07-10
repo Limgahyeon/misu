@@ -179,9 +179,10 @@ export default function ChatView({
       });
   }, [character.id, initialMessages]);
 
-  // 다음 방문 때 0초로 보여줄 스냅샷을 저장 (아바타 제외 — 용량 큼)
+  // 다음 방문 때 0초로 보여줄 스냅샷을 저장 (아바타 제외 — 용량 큼).
+  // 스트리밍 중(sending)에는 청크마다 직렬화하지 않도록 완료 후에만 저장한다.
   useEffect(() => {
-    if (!loaded || messages.length === 0) return;
+    if (!loaded || sending || messages.length === 0) return;
     try {
       localStorage.setItem(
         `misu-chat-cache-${character.id}`,
@@ -197,7 +198,7 @@ export default function ChatView({
     } catch {
       /* 저장 공간 부족 등은 무시 */
     }
-  }, [messages, loaded, kakaoMode, character]);
+  }, [messages, loaded, sending, kakaoMode, character]);
 
   useEffect(() => {
     if (!loaded) return;

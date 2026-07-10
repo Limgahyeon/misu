@@ -129,29 +129,11 @@ async function init() {
   await db
     .execute("ALTER TABLE user_character_profiles ADD COLUMN name TEXT")
     .catch(() => {});
-  // 단일 유저 시절 테이블(memories/character_profiles/profile/settings) → 유저 1로 이관
+  // 모든 메시지 조회가 (user_id, character_id)로 거른다 — user_id는 ALTER로 추가되는
+  // 컬럼이라 인덱스도 여기서 만든다
   await db
     .execute(
-      `INSERT OR IGNORE INTO user_memories (user_id, character_id, summary, last_message_id, updated_at)
-        SELECT 1, character_id, summary, last_message_id, updated_at FROM memories`
-    )
-    .catch(() => {});
-  await db
-    .execute(
-      `INSERT OR IGNORE INTO user_character_profiles (user_id, character_id, content, updated_at)
-        SELECT 1, character_id, content, updated_at FROM character_profiles`
-    )
-    .catch(() => {});
-  await db
-    .execute(
-      `INSERT OR IGNORE INTO user_profiles (user_id, content, updated_at)
-        SELECT 1, content, updated_at FROM profile WHERE id = 1`
-    )
-    .catch(() => {});
-  await db
-    .execute(
-      `INSERT OR IGNORE INTO user_settings (user_id, key, value, updated_at)
-        SELECT 1, key, value, updated_at FROM settings`
+      "CREATE INDEX IF NOT EXISTS idx_messages_user_character ON messages (user_id, character_id, id)"
     )
     .catch(() => {});
 }
@@ -629,23 +611,29 @@ export interface Appointment {
   reminded_at: string | null;
 }
 
-export async function addAppointment(
+// ICS 동기화 전량 교체 — 삭제 + 삽입을 한 번의 왕복(batch)으로.
+// 리마인드가 이미 나간 일정(reminded_at 있음)은 남겨서 중복 알림을 막고,
+// NOT EXISTS 조건으로 그 잔존 행과의 중복 삽입도 막는다.
+export async function replaceIcsAppointments(
   userId: number,
-  title: string,
-  at: string,
-  source: "chat" | "ics"
+  items: { title: string; at: string }[]
 ): Promise<void> {
   await ready;
-  // 같은 시각·제목이 이미 있으면 중복 저장하지 않는다 (ICS 재동기화 대비)
-  const dup = await db.execute({
-    sql: "SELECT id FROM appointments WHERE user_id = ? AND title = ? AND at = ?",
-    args: [userId, title, at],
-  });
-  if (dup.rows.length > 0) return;
-  await db.execute({
-    sql: "INSERT INTO appointments (user_id, title, at, source) VALUES (?, ?, ?, ?)",
-    args: [userId, title, at, source],
-  });
+  await db.batch(
+    [
+      {
+        sql: "DELETE FROM appointments WHERE user_id = ? AND source = 'ics' AND reminded_at IS NULL",
+        args: [userId],
+      },
+      ...items.map((it) => ({
+        sql: `INSERT INTO appointments (user_id, title, at, source)
+          SELECT ?, ?, ?, 'ics'
+          WHERE NOT EXISTS (SELECT 1 FROM appointments WHERE user_id = ? AND title = ? AND at = ?)`,
+        args: [userId, it.title, it.at, userId, it.title, it.at],
+      })),
+    ],
+    "write"
+  );
 }
 
 export async function getUpcomingAppointments(
@@ -667,14 +655,6 @@ export async function markReminded(id: number): Promise<void> {
   await db.execute({
     sql: "UPDATE appointments SET reminded_at = datetime('now') WHERE id = ?",
     args: [id],
-  });
-}
-
-export async function clearIcsAppointments(userId: number): Promise<void> {
-  await ready;
-  await db.execute({
-    sql: "DELETE FROM appointments WHERE user_id = ? AND source = 'ics' AND reminded_at IS NULL",
-    args: [userId],
   });
 }
 
@@ -732,6 +712,23 @@ export async function markCelebrated(id: number, day: string): Promise<void> {
 }
 
 // --- 설정 (유저별 key-value) ---
+
+// 하트비트용 일괄 조회 — 유저의 설정 전부를 한 번의 왕복으로
+export async function getSettings(
+  userId: number
+): Promise<Record<string, string>> {
+  await ready;
+  const result = await db.execute({
+    sql: "SELECT key, value FROM user_settings WHERE user_id = ?",
+    args: [userId],
+  });
+  const map: Record<string, string> = {};
+  for (const row of result.rows) {
+    const value = row.value as string | null;
+    if (value?.trim()) map[row.key as string] = value;
+  }
+  return map;
+}
 
 export async function getSetting(
   userId: number,

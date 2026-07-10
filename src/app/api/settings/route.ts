@@ -76,7 +76,7 @@ export async function PUT(request: NextRequest) {
 
   // 주소가 저장됐으면 하트비트를 기다리지 않고 바로 동기화해서 결과를 알려준다
   if (icsUrl) {
-    await syncCalendarForUser(userId);
+    await syncCalendarForUser(userId, undefined, true);
     const upcoming = await getUpcomingAppointments(userId, 7 * 24);
     return Response.json({ ok: true, ics_synced: upcoming.length });
   }
