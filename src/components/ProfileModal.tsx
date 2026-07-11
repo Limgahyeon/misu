@@ -39,6 +39,7 @@ export default function ProfileModal({
   const [pushState, setPushState] = useState<"unknown" | "on" | "off" | "unsupported">(
     "unknown"
   );
+  const [pushMsg, setPushMsg] = useState<string | null>(null);
   const [icsStatus, setIcsStatus] = useState<{
     ok: boolean;
     text: string;
@@ -93,9 +94,15 @@ export default function ProfileModal({
   }, [characterId]);
 
   async function enablePush() {
+    setPushMsg(null);
     try {
       const permission = await Notification.requestPermission();
-      if (permission !== "granted") return;
+      if (permission !== "granted") {
+        setPushMsg(
+          "알림이 차단돼 있어요. 휴대폰 설정에서 misu(또는 브라우저)의 알림을 허용한 뒤 다시 눌러주세요."
+        );
+        return;
+      }
       const reg = await navigator.serviceWorker.register("/sw.js");
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
@@ -109,8 +116,12 @@ export default function ProfileModal({
         body: JSON.stringify(sub.toJSON()),
       });
       setPushState("on");
+      setPushMsg("이제 그가 먼저 보낸 톡이 알림으로 와요 💌");
     } catch {
       setPushState("off");
+      setPushMsg(
+        "알림 등록에 실패했어요. iPhone은 Safari 공유 → '홈 화면에 추가'로 설치한 misu에서만 켤 수 있어요."
+      );
     }
   }
 
@@ -288,6 +299,11 @@ export default function ProfileModal({
                 </button>
               )}
             </div>
+            {pushMsg && (
+              <p className="mt-1.5 text-[11px] leading-relaxed text-rose-400">
+                {pushMsg}
+              </p>
+            )}
             <div>
               <p className="text-sm font-semibold text-zinc-700">
                 💘 먼저 연락하는 사람
