@@ -7,6 +7,7 @@ import {
   countUserMessagesSince,
   getEffectiveProfile,
   getMemory,
+  getMessagesBefore,
   getOrInitMessages,
   getRecentMessages,
   getSnippets,
@@ -177,6 +178,14 @@ export async function GET(request: NextRequest) {
     : undefined;
   if (!character) {
     return Response.json({ error: "unknown character" }, { status: 404 });
+  }
+
+  // ?before=<id> — 위로 스크롤할 때 더 오래된 대화를 50개씩
+  const before = Number(request.nextUrl.searchParams.get("before"));
+  if (before > 0) {
+    return Response.json({
+      messages: await getMessagesBefore(userId, character.id, before, 50),
+    });
   }
 
   return Response.json({

@@ -15,6 +15,7 @@ interface CharacterInfo {
 }
 
 interface ChatMessage {
+  id?: number;
   role: "user" | "assistant";
   content: string;
   createdAt?: string;
@@ -107,6 +108,11 @@ export default function ChatView({
   const didInitialScroll = useRef(false);
   // 이번 세션에서 전송한 뒤 도착하는 답장에만 순차 등장을 적용
   const liveReveal = useRef(false);
+  // 과거 대화 로드 — 위로 스크롤하면 50개씩 더 불러온다
+  const [hasMore, setHasMore] = useState(true);
+  const loadingOlder = useRef(false);
+  // 프리펜드 직후 스크롤 위치 복원용 (이전 scrollHeight/scrollTop)
+  const prependRestore = useRef<{ height: number; top: number } | null>(null);
 
   // 키보드 애니메이션이 끝날 때까지 여러 번 바닥으로 스크롤해서 마지막 메시지를 보이게 유지
   const stickToBottom = useCallback(() => {
@@ -181,6 +187,7 @@ export default function ChatView({
         setMessages(
           (data.messages ?? []).map(
             (m: ChatMessage & { created_at?: string }) => ({
+              id: m.id,
               role: m.role,
               content: m.content,
               createdAt: m.created_at,
@@ -190,6 +197,38 @@ export default function ChatView({
         setLoaded(true);
       });
   }, [character.id, initialMessages]);
+
+  // 위로 스크롤 시 이전 대화 로드
+  const loadOlder = useCallback(async () => {
+    if (loadingOlder.current || !hasMore) return;
+    const el = scrollRef.current;
+    const oldest = messages.find((m) => m.id != null);
+    if (!el || !oldest?.id) return;
+    loadingOlder.current = true;
+    try {
+      const res = await fetch(
+        `/api/chat?characterId=${character.id}&before=${oldest.id}`
+      );
+      const data = await res.json();
+      const older: ChatMessage[] = (data.messages ?? []).map(
+        (m: ChatMessage & { created_at?: string }) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          createdAt: m.created_at,
+        })
+      );
+      if (older.length < 50) setHasMore(false);
+      if (older.length > 0) {
+        prependRestore.current = { height: el.scrollHeight, top: el.scrollTop };
+        setMessages((prev) => [...older, ...prev]);
+        return; // loadingOlder는 스크롤 복원 후에 푼다
+      }
+    } catch {
+      /* 다음 스크롤에서 재시도 */
+    }
+    loadingOlder.current = false;
+  }, [character.id, hasMore, messages]);
 
   // 다음 방문 때 0초로 보여줄 스냅샷을 저장 (아바타 제외 — 용량 큼).
   // 스트리밍 중(sending)에는 청크마다 직렬화하지 않도록 완료 후에만 저장한다.
@@ -214,10 +253,18 @@ export default function ChatView({
 
   useEffect(() => {
     if (!loaded) return;
+    const el = scrollRef.current;
+    // 과거 대화를 위에 붙인 직후 — 보던 위치가 유지되도록 스크롤 보정
+    if (prependRestore.current && el) {
+      el.scrollTop =
+        el.scrollHeight - prependRestore.current.height + prependRestore.current.top;
+      prependRestore.current = null;
+      loadingOlder.current = false;
+      return;
+    }
     if (!didInitialScroll.current) {
       // 처음 입장은 카톡처럼 바로 최근 메시지에서 시작
       didInitialScroll.current = true;
-      const el = scrollRef.current;
       if (el) el.scrollTop = el.scrollHeight;
       return;
     }
@@ -310,12 +357,14 @@ export default function ChatView({
     setMessages(
       (data.messages ?? []).map(
         (m: ChatMessage & { created_at?: string }) => ({
+          id: m.id,
           role: m.role,
           content: m.content,
           createdAt: m.created_at,
         })
       )
     );
+    setHasMore(true);
   }, [character.id, character.name]);
 
   return (
@@ -409,8 +458,16 @@ export default function ChatView({
 
       <div
         ref={scrollRef}
+        onScroll={(e) => {
+          if (e.currentTarget.scrollTop < 80) loadOlder();
+        }}
         className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-5"
       >
+        {loaded && hasMore && messages.some((m) => m.id != null) && (
+          <p className="pb-1 text-center text-[11px] text-zinc-300">
+            위로 올리면 지난 대화를 불러와요
+          </p>
+        )}
         {!loaded && (
           <p className="pt-10 text-center text-sm text-zinc-400">
             대화를 불러오는 중...

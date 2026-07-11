@@ -33,6 +33,7 @@ export default async function ChatPage({
         avatar: character.avatar,
       }}
       initialMessages={messages.map((m) => ({
+        id: m.id,
         role: m.role,
         content: m.content,
         createdAt: m.created_at,

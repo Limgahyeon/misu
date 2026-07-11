@@ -242,6 +242,21 @@ export async function getRecentMessages(
   return result.rows as unknown as Message[];
 }
 
+// 과거 대화 페이지네이션 — 특정 메시지보다 오래된 것들을 최근순 limit개
+export async function getMessagesBefore(
+  userId: number,
+  characterId: string,
+  beforeId: number,
+  limit: number
+): Promise<Message[]> {
+  await ready;
+  const result = await db.execute({
+    sql: "SELECT * FROM (SELECT * FROM messages WHERE user_id = ? AND character_id = ? AND id < ? ORDER BY id DESC LIMIT ?) ORDER BY id",
+    args: [userId, characterId, beforeId, limit],
+  });
+  return result.rows as unknown as Message[];
+}
+
 // 채팅방 진입용 — 대화가 없으면 첫 장면을 심고, 최근 메시지만 돌려준다.
 // 방에 들어온 것이므로 읽음 처리도 함께 한다.
 export async function getOrInitMessages(
