@@ -5,6 +5,7 @@ import { getUserIdFromRequest } from "@/lib/auth";
 import {
   addMessage,
   countUserMessagesSince,
+  deleteMessage,
   getEffectiveProfile,
   getMemory,
   getMessagesBefore,
@@ -198,11 +199,15 @@ export async function POST(request: NextRequest) {
   if (!userId) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
-  const { characterId, message, model, kakaoMode } = await request.json();
+  const { characterId, message, model, reroll } = await request.json();
+  const isReroll = reroll === true;
   const character = characterId
     ? await findCharacter(userId, characterId)
     : undefined;
-  if (!character || typeof message !== "string" || !message.trim()) {
+  if (
+    !character ||
+    (!isReroll && (typeof message !== "string" || !message.trim()))
+  ) {
     return Response.json({ error: "invalid request" }, { status: 400 });
   }
 
@@ -218,7 +223,22 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  await addMessage(userId, character.id, "user", message.trim());
+  // 리롤: 마지막 캐릭터 답장을 지우고, 직전 유저 메시지에 대해 다시 생성한다.
+  // 일반 전송: 유저 메시지를 저장하고 이어서 생성한다.
+  let queryText: string;
+  if (isReroll) {
+    const lastTwo = await getRecentMessages(userId, character.id, 2);
+    const last = lastTwo[lastTwo.length - 1];
+    const beforeLast = lastTwo[lastTwo.length - 2];
+    if (!last || last.role !== "assistant" || beforeLast?.role !== "user") {
+      return Response.json({ error: "nothing to reroll" }, { status: 400 });
+    }
+    await deleteMessage(userId, character.id, last.id);
+    queryText = beforeLast.content;
+  } else {
+    queryText = message.trim();
+    await addMessage(userId, character.id, "user", queryText);
+  }
 
   // IP 기반 위치 (Vercel 헤더). 로컬 dev 등 헤더가 없으면 서울로 폴백
   const lat = request.headers.get("x-vercel-ip-latitude") ?? "37.5665";
@@ -233,7 +253,7 @@ export async function POST(request: NextRequest) {
       getMemory(userId, character.id),
       getEffectiveProfile(userId, character.id),
       getWeather(lat, lon, city),
-      retrieveExamples(character.id, message.trim()),
+      retrieveExamples(character.id, queryText),
       getUpcomingAppointments(userId, 7 * 24),
     ]);
   const schedule =
@@ -264,12 +284,7 @@ export async function POST(request: NextRequest) {
         ? `[${formatKst(m.created_at)}] ${m.content}`
         : m.content,
   }));
-  const system = buildSystemPrompt(
-    character,
-    memory?.summary,
-    profile,
-    !!kakaoMode
-  );
+  const system = buildSystemPrompt(character, memory?.summary, profile);
   const note = buildContextNote(weather, schedule, examples);
 
   // 친구 계정은 유료 모델 중 haiku만 (sonnet 요청은 조용히 haiku로)
@@ -321,7 +336,7 @@ export async function POST(request: NextRequest) {
         if (!full) {
           controller.enqueue(
             encoder.encode(
-              "*(지금 답장이 잘 안 돼요… 잠시 뒤에 다시 말 걸어주세요 🥲)*"
+              "(지금 답장이 잘 안 돼요… 잠시 뒤에 다시 말 걸어주세요 🥲)"
             )
           );
         }

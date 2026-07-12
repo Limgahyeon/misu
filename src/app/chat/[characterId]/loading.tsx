@@ -9,7 +9,6 @@ interface CachedChat {
   emoji: string;
   gradient: string;
   job: string;
-  kakao: boolean;
   messages: { role: "user" | "assistant"; content: string }[];
 }
 
@@ -91,9 +90,7 @@ export default function Loading() {
             );
           }
           const clean = stripTimeMeta(m.content);
-          const parts = cached.kakao
-            ? clean.split(/\n+/).filter((p) => p.trim())
-            : [clean];
+          const parts = clean.split(/\n+/).filter((p) => p.trim());
           return (
             <div key={i} className="flex gap-2">
               <div

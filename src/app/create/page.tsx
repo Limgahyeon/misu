@@ -186,7 +186,10 @@ function CreateForm() {
       if (!res.ok) throw new Error();
       const data = await res.json();
       setForm((f) => ({
-        dialogExamples: f.dialogExamples,
+        // 이미 써둔 예시가 있으면 유지, 없으면 AI가 생성한 예시를 채운다
+        dialogExamples: f.dialogExamples.trim()
+          ? f.dialogExamples
+          : data.dialogExamples ?? "",
         name: data.name ?? "",
         age: String(data.age ?? ""),
         job: data.job ?? "",
@@ -350,7 +353,7 @@ function CreateForm() {
         <textarea value={form.personality} onChange={set("personality")} rows={3} placeholder="성격" className={inputCls} />
         <textarea value={form.speechStyle} onChange={set("speechStyle")} rows={2} placeholder="말투 (반말/존댓말, 특유의 표현)" className={inputCls} />
         <textarea value={form.relationship} onChange={set("relationship")} rows={2} placeholder="나와의 관계 (어떻게 만나 사귀게 됐는지)" className={inputCls} />
-        <textarea value={form.firstScene} onChange={set("firstScene")} rows={4} placeholder="첫 장면 (*지문*과 대사를 섞어서)" className={inputCls} />
+        <textarea value={form.firstScene} onChange={set("firstScene")} rows={4} placeholder="첫 카톡 (지문 없이 문자만, 여러 메시지는 줄바꿈으로)" className={inputCls} />
         <div>
           <textarea
             value={form.dialogExamples}

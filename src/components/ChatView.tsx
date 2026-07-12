@@ -95,7 +95,6 @@ export default function ChatView({
   const [sending, setSending] = useState(false);
   const [loaded, setLoaded] = useState(!!initialMessages);
   const [model, setModel] = useState<ModelId>("haiku");
-  const [kakaoMode, setKakaoMode] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [viewportHeight, setViewportHeight] = useState<number>();
@@ -162,17 +161,9 @@ export default function ChatView({
         !allowPaidModels && saved === "sonnet" ? "haiku" : (saved as ModelId);
       setModel(coerced);
     }
-    setKakaoMode(localStorage.getItem(`misu-kakao-${character.id}`) === "1");
     // 터치 기기면 엔터 = 줄바꿈, 전송은 버튼 (카톡과 동일)
     coarsePointer.current = window.matchMedia("(pointer: coarse)").matches;
   }, [character.id, allowPaidModels]);
-
-  const toggleKakaoMode = useCallback(() => {
-    setKakaoMode((v) => {
-      localStorage.setItem(`misu-kakao-${character.id}`, v ? "0" : "1");
-      return !v;
-    });
-  }, [character.id]);
 
   const selectModel = useCallback((id: ModelId) => {
     setModel(id);
@@ -242,14 +233,13 @@ export default function ChatView({
           emoji: character.emoji,
           gradient: character.gradient,
           job: character.job,
-          kakao: kakaoMode,
           messages: messages.slice(-30),
         })
       );
     } catch {
       /* 저장 공간 부족 등은 무시 */
     }
-  }, [messages, loaded, sending, kakaoMode, character]);
+  }, [messages, loaded, sending, character]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -293,7 +283,6 @@ export default function ChatView({
           characterId: character.id,
           message: text,
           model,
-          kakaoMode,
         }),
       });
       if (!res.ok || !res.body) throw new Error("request failed");
@@ -320,7 +309,7 @@ export default function ChatView({
         const next = [...prev];
         next[next.length - 1] = {
           ...next[next.length - 1],
-          content: "*연결이 잠시 끊겼다* ...방금 뭐라고 했어? 다시 말해줘.",
+          content: "앗 연결이 잠깐 끊겼나 봐 🥲\n방금 뭐라고 했어? 다시 말해줘",
         };
         return next;
       });
@@ -328,13 +317,75 @@ export default function ChatView({
       setSending(false);
       textareaRef.current?.focus();
     }
-  }, [input, sending, character.id, model, kakaoMode]);
+  }, [input, sending, character.id, model]);
 
-  // 카톡 모드: 이번 세션에서 받는 답장만 말풍선 단위로 텀을 두고 등장시킨다
+  // 마지막 캐릭터 답장을 다른 버전으로 다시 받는다 (서버가 기존 답장을 지우고 재생성)
+  const reroll = useCallback(async () => {
+    if (sending) return;
+    const last = messages[messages.length - 1];
+    if (last?.role !== "assistant") return;
+    setSending(true);
+    setRevealed(0);
+    liveReveal.current = true;
+    const prevContent = last.content;
+    setMessages((prev) => {
+      const next = [...prev];
+      next[next.length - 1] = {
+        ...next[next.length - 1],
+        content: "",
+        createdAt: new Date().toISOString(),
+      };
+      return next;
+    });
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          characterId: character.id,
+          model,
+          reroll: true,
+        }),
+      });
+      if (!res.ok || !res.body) throw new Error("reroll failed");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let acc = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        acc += decoder.decode(value, { stream: true });
+        const current = acc;
+        setMessages((prev) => {
+          const next = [...prev];
+          next[next.length - 1] = {
+            ...next[next.length - 1],
+            content: current,
+          };
+          return next;
+        });
+      }
+    } catch {
+      // 실패하면 원래 답장을 되돌린다
+      setMessages((prev) => {
+        const next = [...prev];
+        next[next.length - 1] = {
+          ...next[next.length - 1],
+          content: prevContent,
+        };
+        return next;
+      });
+    } finally {
+      setSending(false);
+    }
+  }, [messages, sending, character.id, model]);
+
+  // 이번 세션에서 받는 답장만 말풍선 단위로 텀을 두고 등장시킨다
   const lastMsg = messages[messages.length - 1];
   useEffect(() => {
-    if (!kakaoMode || !liveReveal.current || lastMsg?.role !== "assistant")
-      return;
+    if (!liveReveal.current || lastMsg?.role !== "assistant") return;
     const parts = stripTimeMeta(lastMsg.content)
       .split(/\n+/)
       .filter((p) => p.trim());
@@ -346,7 +397,7 @@ export default function ChatView({
       revealed === 0 ? 250 : 700
     );
     return () => clearTimeout(t);
-  }, [kakaoMode, lastMsg, sending, revealed]);
+  }, [lastMsg, sending, revealed]);
 
   const reset = useCallback(async () => {
     if (!confirm(`${character.name}와의 대화를 처음부터 다시 시작할까요?`))
@@ -423,19 +474,6 @@ export default function ChatView({
                   💌 내 정보
                 </button>
                 <button
-                  onClick={toggleKakaoMode}
-                  className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm text-zinc-600 hover:bg-rose-50"
-                >
-                  <span>💬 카톡 모드</span>
-                  <span
-                    className={`text-[11px] font-semibold ${
-                      kakaoMode ? "text-amber-500" : "text-zinc-300"
-                    }`}
-                  >
-                    {kakaoMode ? "ON" : "OFF"}
-                  </span>
-                </button>
-                <button
                   onClick={() => {
                     setMenuOpen(false);
                     reset();
@@ -506,19 +544,23 @@ export default function ChatView({
             );
           }
 
-          // 시각 메타데이터가 새어 나온 과거 메시지 정리 + 카톡 모드면 줄 단위 분할
+          // 시각 메타데이터가 새어 나온 과거 메시지 정리 + 줄 단위 말풍선 분할
           const clean = stripTimeMeta(m.content);
-          const allParts =
-            kakaoMode && clean
-              ? clean.split(/\n+/).filter((p) => p.trim())
-              : [clean];
+          const allParts = clean
+            ? clean.split(/\n+/).filter((p) => p.trim())
+            : [clean];
           // 이번에 도착 중인 답장은 revealed 개수만큼만 보여주고 나머지는 타이핑 표시
-          const isLive =
-            kakaoMode && liveReveal.current && i === messages.length - 1;
+          const isLive = liveReveal.current && i === messages.length - 1;
           const parts = isLive ? allParts.slice(0, revealed) : allParts;
           const typing =
             isLive && (sending || revealed < allParts.length);
           const complete = !typing && parts.length === allParts.length;
+          // 마지막 답장이고 그 앞이 유저 메시지면 다른 버전으로 다시 받을 수 있다
+          const canReroll =
+            !sending &&
+            complete &&
+            i === messages.length - 1 &&
+            messages[i - 1]?.role === "user";
           return (
             <div key={i}>
               {divider}
@@ -570,6 +612,14 @@ export default function ChatView({
                         </span>
                       </div>
                     </div>
+                  )}
+                  {canReroll && (
+                    <button
+                      onClick={reroll}
+                      className="self-start px-1 pt-0.5 text-[11px] text-zinc-300 transition-colors hover:text-rose-400"
+                    >
+                      ↻ 다른 답장 받기
+                    </button>
                   )}
                 </div>
               </div>

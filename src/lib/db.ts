@@ -313,6 +313,19 @@ export async function addMessage(
   });
 }
 
+// 리롤용 — 마지막 캐릭터 답장을 지우고 같은 자리에서 다시 생성한다
+export async function deleteMessage(
+  userId: number,
+  characterId: string,
+  id: number
+): Promise<void> {
+  await ready;
+  await db.execute({
+    sql: "DELETE FROM messages WHERE id = ? AND user_id = ? AND character_id = ?",
+    args: [id, userId, characterId],
+  });
+}
+
 export async function resetConversation(
   userId: number,
   characterId: string
