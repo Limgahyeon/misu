@@ -19,6 +19,31 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   createdAt?: string;
+  // 리롤로 쌓인 답장 버전들 — content는 그중 현재 선택된 것
+  variants?: string[];
+}
+
+// API 원본 행 → ChatMessage (variants는 DB에 JSON 문자열로 저장돼 있다)
+function toChatMessage(
+  m: ChatMessage & { created_at?: string; variants?: string[] | string | null }
+): ChatMessage {
+  let variants: string[] | undefined;
+  if (typeof m.variants === "string") {
+    try {
+      variants = JSON.parse(m.variants);
+    } catch {
+      variants = undefined;
+    }
+  } else {
+    variants = m.variants ?? undefined;
+  }
+  return {
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    createdAt: m.created_at ?? m.createdAt,
+    variants,
+  };
 }
 
 // DB의 UTC 시각("YYYY-MM-DD HH:MM:SS") 또는 ISO 문자열을 Date로
@@ -175,16 +200,7 @@ export default function ChatView({
     fetch(`/api/chat?characterId=${character.id}`)
       .then((r) => r.json())
       .then((data) => {
-        setMessages(
-          (data.messages ?? []).map(
-            (m: ChatMessage & { created_at?: string }) => ({
-              id: m.id,
-              role: m.role,
-              content: m.content,
-              createdAt: m.created_at,
-            })
-          )
-        );
+        setMessages((data.messages ?? []).map(toChatMessage));
         setLoaded(true);
       });
   }, [character.id, initialMessages]);
@@ -201,14 +217,7 @@ export default function ChatView({
         `/api/chat?characterId=${character.id}&before=${oldest.id}`
       );
       const data = await res.json();
-      const older: ChatMessage[] = (data.messages ?? []).map(
-        (m: ChatMessage & { created_at?: string }) => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          createdAt: m.created_at,
-        })
-      );
+      const older: ChatMessage[] = (data.messages ?? []).map(toChatMessage);
       if (older.length < 50) setHasMore(false);
       if (older.length > 0) {
         prependRestore.current = { height: el.scrollHeight, top: el.scrollTop };
@@ -319,7 +328,7 @@ export default function ChatView({
     }
   }, [input, sending, character.id, model]);
 
-  // 마지막 캐릭터 답장을 다른 버전으로 다시 받는다 (서버가 기존 답장을 지우고 재생성)
+  // 마지막 캐릭터 답장의 새 버전을 받는다 — 기존 버전은 variants에 남아 ‹ ›로 오갈 수 있다
   const reroll = useCallback(async () => {
     if (sending) return;
     const last = messages[messages.length - 1];
@@ -328,6 +337,7 @@ export default function ChatView({
     setRevealed(0);
     liveReveal.current = true;
     const prevContent = last.content;
+    const baseVariants = last.variants ?? [last.content];
     setMessages((prev) => {
       const next = [...prev];
       next[next.length - 1] = {
@@ -367,6 +377,16 @@ export default function ChatView({
           return next;
         });
       }
+      // 서버와 같은 규칙으로 버전 배열을 갱신 (새 버전이 맨 뒤 + 선택 상태)
+      const newContent = acc;
+      setMessages((prev) => {
+        const next = [...prev];
+        next[next.length - 1] = {
+          ...next[next.length - 1],
+          variants: [...baseVariants, newContent],
+        };
+        return next;
+      });
     } catch {
       // 실패하면 원래 답장을 되돌린다
       setMessages((prev) => {
@@ -381,6 +401,34 @@ export default function ChatView({
       setSending(false);
     }
   }, [messages, sending, character.id, model]);
+
+  // ‹ › 로 답장 버전을 오간다 — 선택은 서버에도 저장돼 대화 맥락에 반영된다
+  const selectVariant = useCallback(
+    (idx: number) => {
+      if (sending) return;
+      const last = messages[messages.length - 1];
+      const variants = last?.variants;
+      if (last?.role !== "assistant" || !variants) return;
+      if (idx < 0 || idx >= variants.length) return;
+      liveReveal.current = false;
+      setMessages((prev) => {
+        const next = [...prev];
+        next[next.length - 1] = {
+          ...next[next.length - 1],
+          content: variants[idx],
+        };
+        return next;
+      });
+      fetch("/api/chat", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId: character.id, variantIdx: idx }),
+      }).catch(() => {
+        /* 다음 선택이나 새로고침 때 서버 상태로 복구된다 */
+      });
+    },
+    [messages, sending, character.id]
+  );
 
   // 이번 세션에서 받는 답장만 말풍선 단위로 텀을 두고 등장시킨다
   const lastMsg = messages[messages.length - 1];
@@ -405,16 +453,7 @@ export default function ChatView({
     await fetch(`/api/chat?characterId=${character.id}`, { method: "DELETE" });
     const res = await fetch(`/api/chat?characterId=${character.id}`);
     const data = await res.json();
-    setMessages(
-      (data.messages ?? []).map(
-        (m: ChatMessage & { created_at?: string }) => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          createdAt: m.created_at,
-        })
-      )
-    );
+    setMessages((data.messages ?? []).map(toChatMessage));
     setHasMore(true);
   }, [character.id, character.name]);
 
@@ -561,6 +600,14 @@ export default function ChatView({
             complete &&
             i === messages.length - 1 &&
             messages[i - 1]?.role === "user";
+          // 현재 보고 있는 버전 번호 (content가 배열에 없으면 마지막 버전으로 간주)
+          const vList = canReroll ? m.variants : undefined;
+          const vIdx = vList
+            ? (() => {
+                const idx = vList.indexOf(m.content);
+                return idx >= 0 ? idx : vList.length - 1;
+              })()
+            : 0;
           return (
             <div key={i}>
               {divider}
@@ -614,12 +661,35 @@ export default function ChatView({
                     </div>
                   )}
                   {canReroll && (
-                    <button
-                      onClick={reroll}
-                      className="self-start px-1 pt-0.5 text-[11px] text-zinc-300 transition-colors hover:text-rose-400"
-                    >
-                      ↻ 다른 답장 받기
-                    </button>
+                    <div className="flex items-center gap-2.5 px-1 pt-0.5">
+                      {vList && vList.length > 1 && (
+                        <span className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+                          <button
+                            onClick={() => selectVariant(vIdx - 1)}
+                            disabled={vIdx <= 0}
+                            aria-label="이전 답장"
+                            className="px-0.5 text-sm leading-none transition-colors hover:text-rose-400 disabled:opacity-30"
+                          >
+                            ‹
+                          </button>
+                          {vIdx + 1}/{vList.length}
+                          <button
+                            onClick={() => selectVariant(vIdx + 1)}
+                            disabled={vIdx >= vList.length - 1}
+                            aria-label="다음 답장"
+                            className="px-0.5 text-sm leading-none transition-colors hover:text-rose-400 disabled:opacity-30"
+                          >
+                            ›
+                          </button>
+                        </span>
+                      )}
+                      <button
+                        onClick={reroll}
+                        className="text-[11px] text-zinc-300 transition-colors hover:text-rose-400"
+                      >
+                        ↻ 다른 답장 받기
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

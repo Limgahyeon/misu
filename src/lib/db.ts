@@ -139,6 +139,10 @@ async function init() {
   await db
     .execute("ALTER TABLE user_character_profiles ADD COLUMN name TEXT")
     .catch(() => {});
+  // 리롤 버전들 — JSON 배열, content는 현재 선택된 버전을 항상 미러링
+  await db
+    .execute("ALTER TABLE messages ADD COLUMN variants TEXT")
+    .catch(() => {});
   // 모든 메시지 조회가 (user_id, character_id)로 거른다 — user_id는 ALTER로 추가되는
   // 컬럼이라 인덱스도 여기서 만든다
   await db
@@ -214,6 +218,8 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  // 리롤로 쌓인 답장 버전들(JSON 배열 문자열). content = 현재 선택된 버전
+  variants?: string | null;
 }
 
 export async function getMessages(
@@ -313,16 +319,19 @@ export async function addMessage(
   });
 }
 
-// 리롤용 — 마지막 캐릭터 답장을 지우고 같은 자리에서 다시 생성한다
-export async function deleteMessage(
+// 리롤용 — 답장 버전 배열과 현재 선택된 버전(content)을 저장한다.
+// content를 미러링해두면 히스토리·기억 요약·채팅 리스트가 전부 선택된 버전을 그대로 쓴다.
+export async function saveAssistantVariants(
   userId: number,
   characterId: string,
-  id: number
+  id: number,
+  content: string,
+  variants: string[]
 ): Promise<void> {
   await ready;
   await db.execute({
-    sql: "DELETE FROM messages WHERE id = ? AND user_id = ? AND character_id = ?",
-    args: [id, userId, characterId],
+    sql: "UPDATE messages SET content = ?, variants = ? WHERE id = ? AND user_id = ? AND character_id = ? AND role = 'assistant'",
+    args: [content, JSON.stringify(variants), id, userId, characterId],
   });
 }
 

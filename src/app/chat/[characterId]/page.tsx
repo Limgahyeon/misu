@@ -37,6 +37,7 @@ export default async function ChatPage({
         role: m.role,
         content: m.content,
         createdAt: m.created_at,
+        variants: m.variants ? (JSON.parse(m.variants) as string[]) : undefined,
       }))}
       allowPaidModels={userId === OWNER_USER_ID}
     />

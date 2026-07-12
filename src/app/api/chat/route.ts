@@ -5,7 +5,6 @@ import { getUserIdFromRequest } from "@/lib/auth";
 import {
   addMessage,
   countUserMessagesSince,
-  deleteMessage,
   getEffectiveProfile,
   getMemory,
   getMessagesBefore,
@@ -14,7 +13,9 @@ import {
   getSnippets,
   getUpcomingAppointments,
   markRead,
+  Message,
   resetConversation,
+  saveAssistantVariants,
   saveSetting,
 } from "@/lib/db";
 import {
@@ -223,9 +224,10 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // 리롤: 마지막 캐릭터 답장을 지우고, 직전 유저 메시지에 대해 다시 생성한다.
-  // 일반 전송: 유저 메시지를 저장하고 이어서 생성한다.
+  // 리롤: 마지막 캐릭터 답장은 남겨두고, 직전 유저 메시지에 대해 새 버전을 생성해
+  // variants 배열에 쌓는다. 일반 전송: 유저 메시지를 저장하고 이어서 생성한다.
   let queryText: string;
+  let rerollTarget: Message | undefined;
   if (isReroll) {
     const lastTwo = await getRecentMessages(userId, character.id, 2);
     const last = lastTwo[lastTwo.length - 1];
@@ -233,7 +235,7 @@ export async function POST(request: NextRequest) {
     if (!last || last.role !== "assistant" || beforeLast?.role !== "user") {
       return Response.json({ error: "nothing to reroll" }, { status: 400 });
     }
-    await deleteMessage(userId, character.id, last.id);
+    rerollTarget = last;
     queryText = beforeLast.content;
   } else {
     queryText = message.trim();
@@ -272,8 +274,11 @@ export async function POST(request: NextRequest) {
           })
           .join("\n")
       : undefined;
+  // 리롤 대상 답장은 히스토리에서 뺀다 — 그 자리에 새 버전이 생성되는 것이므로
   const recent = messages
-    .filter((m) => m.id > (memory?.last_message_id ?? 0))
+    .filter(
+      (m) => m.id > (memory?.last_message_id ?? 0) && m.id !== rerollTarget?.id
+    )
     .slice(-HISTORY_LIMIT);
   // 모델에 주는 히스토리의 유저 메시지에만 보낸 시각 메타데이터를 붙인다.
   // 캐릭터(assistant) 메시지에는 붙이지 않는다 — 모델이 형식을 따라 출력하는 것 방지
@@ -317,7 +322,22 @@ export async function POST(request: NextRequest) {
           await pump(streamClaude(CLAUDE_MODELS.haiku, system, timed, note));
         }
         if (full) {
-          await addMessage(userId, character.id, "assistant", stripTimeMeta(full));
+          const text = stripTimeMeta(full);
+          if (rerollTarget) {
+            // 기존 버전들 뒤에 새 버전을 붙이고, 새 버전을 선택 상태로
+            const prev: string[] = rerollTarget.variants
+              ? JSON.parse(rerollTarget.variants)
+              : [rerollTarget.content];
+            await saveAssistantVariants(
+              userId,
+              character.id,
+              rerollTarget.id,
+              text,
+              [...prev, text]
+            );
+          } else {
+            await addMessage(userId, character.id, "assistant", text);
+          }
           // 대화 중이므로 방금 답장까지 읽음 처리
           await markRead(userId, character.id);
         }
@@ -348,6 +368,37 @@ export async function POST(request: NextRequest) {
   return new Response(body, {
     headers: { "Content-Type": "text/plain; charset=utf-8" },
   });
+}
+
+// 리롤 버전 선택 — 마지막 답장의 variants 중 하나를 현재 버전으로 지정한다
+export async function PATCH(request: NextRequest) {
+  const userId = await getUserIdFromRequest(request);
+  if (!userId) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+  const { characterId, variantIdx } = await request.json();
+  const character = characterId
+    ? await findCharacter(userId, characterId)
+    : undefined;
+  if (!character || !Number.isInteger(variantIdx)) {
+    return Response.json({ error: "invalid request" }, { status: 400 });
+  }
+  const [last] = await getRecentMessages(userId, character.id, 1);
+  if (!last || last.role !== "assistant" || !last.variants) {
+    return Response.json({ error: "no variants" }, { status: 400 });
+  }
+  const variants: string[] = JSON.parse(last.variants);
+  if (variantIdx < 0 || variantIdx >= variants.length) {
+    return Response.json({ error: "invalid index" }, { status: 400 });
+  }
+  await saveAssistantVariants(
+    userId,
+    character.id,
+    last.id,
+    variants[variantIdx],
+    variants
+  );
+  return Response.json({ ok: true });
 }
 
 export async function DELETE(request: NextRequest) {
