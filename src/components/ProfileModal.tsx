@@ -242,11 +242,14 @@ export default function ProfileModal({
           maxLength={30}
           disabled={!loaded}
           placeholder={
-            characterId
-              ? fallbackName
-                ? `이름 — 비워두면 "${fallbackName}"으로 불러요`
-                : "이름 (이 캐릭터가 이렇게 불러요)"
-              : "이름 (그가 이렇게 불러요 — 예: 지은, 자기야)"
+            // 불러오는 동안은 비워둔다 — 로드 전후로 플레이스홀더가 바뀌며 깜빡이는 것 방지
+            !loaded
+              ? ""
+              : characterId
+                ? fallbackName
+                  ? `이름 — 비워두면 "${fallbackName}"으로 불러요`
+                  : "이름 (이 캐릭터가 이렇게 불러요)"
+                : "이름 (그가 이렇게 불러요 — 예: 지은, 자기야)"
           }
           className="mt-3 w-full rounded-2xl border border-rose-100 bg-white px-4 py-3 text-sm text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-rose-300"
         />
@@ -262,11 +265,13 @@ export default function ProfileModal({
           maxLength={2000}
           disabled={!loaded}
           placeholder={
-            characterId
-              ? fallback
-                ? `비워두면 기본 내 정보를 사용:\n${fallback.slice(0, 120)}`
-                : "예)\n이름/호칭: 지은\n역할: MUSE 소속 B급 가이드\n관계: 결속 파트너 후보로 배정됨"
-              : "예)\n나이: 26세, 마케터\n좋아하는 것: 매운 음식, 고양이, 발라드\n요즘 고민: 이직 준비 중"
+            !loaded
+              ? ""
+              : characterId
+                ? fallback
+                  ? `비워두면 기본 내 정보를 사용:\n${fallback.slice(0, 120)}`
+                  : "예)\n나이: 26세, 마케터\n좋아하는 것: 매운 음식, 고양이\n이 캐릭터 앞에서의 나: 회사에서와 달리 어리광 많은 편"
+                : "예)\n나이: 26세, 마케터\n좋아하는 것: 매운 음식, 고양이, 발라드\n요즘 고민: 이직 준비 중"
           }
           className="mt-3 w-full resize-none rounded-2xl border border-rose-100 bg-white px-4 py-3 text-sm text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-rose-300"
         />
