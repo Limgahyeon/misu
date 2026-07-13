@@ -3,9 +3,10 @@ import Link from "next/link";
 const TABS = [
   { href: "/", label: "친구", icon: "🧸" },
   { href: "/chats", label: "채팅", icon: "💬" },
+  { href: "/me", label: "내 정보", icon: "💌" },
 ] as const;
 
-export default function TabBar({ active }: { active: "/" | "/chats" }) {
+export default function TabBar({ active }: { active: "/" | "/chats" | "/me" }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40">
       <div className="mx-auto flex w-full max-w-md border-t border-white/60 bg-white/80 backdrop-blur-md">

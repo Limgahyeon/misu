@@ -11,12 +11,16 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   return arr;
 }
 
-export default function ProfileModal({
+// 내용 폼 — 모달(채팅방의 '이 채팅에서의 나')과 내 정보 탭(인라인) 양쪽에서 쓴다.
+// inline이면 취소 버튼이 없고, 저장해도 닫히지 않고 완료 메시지만 보여준다.
+export function ProfileForm({
   onClose,
   characterId,
+  inline,
 }: {
-  onClose: () => void;
+  onClose?: () => void;
   characterId?: string;
+  inline?: boolean;
 }) {
   const [profile, setProfile] = useState("");
   const [fallback, setFallback] = useState("");
@@ -212,20 +216,25 @@ export default function ProfileModal({
           text: `캘린더 연동 완료 💕 앞으로 7일 일정 ${data.ics_synced}개를 챙길게요`,
         });
         setSaving(false);
-        setTimeout(onClose, 1800);
+        if (!inline) setTimeout(() => onClose?.(), 1800);
         return;
       }
     }
-    onClose();
+    if (inline) {
+      setSaving(false);
+      setIcsStatus({ ok: true, text: "저장했어요 💕" });
+      return;
+    }
+    onClose?.();
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/30 px-6 backdrop-blur-sm"
-      onClick={onClose}
-    >
       <div
-        className="max-h-[85dvh] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/60 bg-white/95 p-5 shadow-xl"
+        className={
+          inline
+            ? "w-full rounded-3xl border border-white/60 bg-white/95 p-5 shadow-xl"
+            : "max-h-[85dvh] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/60 bg-white/95 p-5 shadow-xl"
+        }
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-base font-bold text-zinc-800">
@@ -454,12 +463,14 @@ export default function ProfileModal({
         )}
 
         <div className="mt-3 flex gap-2">
-          <button
-            onClick={onClose}
-            className="flex-1 rounded-2xl border border-zinc-200 py-2.5 text-sm text-zinc-500 hover:bg-zinc-50"
-          >
-            취소
-          </button>
+          {!inline && (
+            <button
+              onClick={onClose}
+              className="flex-1 rounded-2xl border border-zinc-200 py-2.5 text-sm text-zinc-500 hover:bg-zinc-50"
+            >
+              취소
+            </button>
+          )}
           <button
             onClick={save}
             disabled={saving || !loaded}
@@ -469,6 +480,23 @@ export default function ProfileModal({
           </button>
         </div>
       </div>
+  );
+}
+
+// 모달 래퍼 — 채팅방의 '이 채팅에서의 나'에서 쓴다
+export default function ProfileModal({
+  onClose,
+  characterId,
+}: {
+  onClose: () => void;
+  characterId?: string;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/30 px-6 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <ProfileForm onClose={onClose} characterId={characterId} />
     </div>
   );
 }
