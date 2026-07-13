@@ -50,6 +50,40 @@ export async function verifyUserCookie(
   return sig === (await hmac(id)) ? Number(id) : undefined;
 }
 
+// 임의 JSON 페이로드를 HMAC 서명해 쿠키에 담는다 — 카카오 인증 후
+// 초대 코드 입력 전까지의 '가입 대기' 상태 같은 단명 상태 전달용.
+export async function signPayload(payload: object): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  const encoded = btoa(bin)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+  return `${encoded}.${await hmac(encoded)}`;
+}
+
+export async function verifyPayload<T>(
+  value: string | undefined
+): Promise<T | undefined> {
+  if (!value) return undefined;
+  const dot = value.indexOf(".");
+  if (dot <= 0) return undefined;
+  const encoded = value.slice(0, dot);
+  const sig = value.slice(dot + 1);
+  if (sig !== (await hmac(encoded))) return undefined;
+  try {
+    const bin = atob(encoded.replace(/-/g, "+").replace(/_/g, "/"));
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    const parsed = JSON.parse(new TextDecoder().decode(bytes));
+    // exp(unix ms)가 있으면 만료 검사
+    if (parsed.exp && Date.now() > parsed.exp) return undefined;
+    return parsed as T;
+  } catch {
+    return undefined;
+  }
+}
+
 // API 라우트용 — 요청 쿠키에서 유저 id를 꺼낸다
 export async function getUserIdFromRequest(
   request: NextRequest

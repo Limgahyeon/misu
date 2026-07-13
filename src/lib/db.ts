@@ -1,5 +1,5 @@
 import { createClient } from "@libsql/client";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { Character } from "./characters";
 
 // 로컬 개발(next dev)은 기본적으로 로컬 파일 DB를 쓴다 — 테스트가 실서비스
@@ -108,6 +108,13 @@ const initSql = `
     last_celebrated TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS invite_codes (
+    code_hash TEXT PRIMARY KEY,
+    note TEXT,
+    used_by INTEGER,
+    used_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `;
 
 async function init() {
@@ -142,6 +149,16 @@ async function init() {
   // 리롤 버전들 — JSON 배열, content는 현재 선택된 버전을 항상 미러링
   await db
     .execute("ALTER TABLE messages ADD COLUMN variants TEXT")
+    .catch(() => {});
+  // 소셜 로그인 — provider('kakao' 등) + 그쪽 고유 id, 접속 코드 로그인과 병행
+  await db.execute("ALTER TABLE users ADD COLUMN provider TEXT").catch(() => {});
+  await db
+    .execute("ALTER TABLE users ADD COLUMN provider_id TEXT")
+    .catch(() => {});
+  await db
+    .execute(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_provider ON users (provider, provider_id)"
+    )
     .catch(() => {});
   // 모든 메시지 조회가 (user_id, character_id)로 거른다 — user_id는 ALTER로 추가되는
   // 컬럼이라 인덱스도 여기서 만든다
@@ -208,6 +225,90 @@ export async function listUsers(): Promise<User[]> {
   await ready;
   const result = await db.execute("SELECT id, name FROM users ORDER BY id");
   return result.rows as unknown as User[];
+}
+
+export async function findUserByProvider(
+  provider: string,
+  providerId: string
+): Promise<User | undefined> {
+  await ready;
+  const result = await db.execute({
+    sql: "SELECT id, name FROM users WHERE provider = ? AND provider_id = ?",
+    args: [provider, providerId],
+  });
+  const row = result.rows[0];
+  return row ? { id: row.id as number, name: row.name as string } : undefined;
+}
+
+// 소셜 가입 유저 — code_hash는 NOT NULL UNIQUE라 랜덤 값을 채워둔다(접속 코드 없음)
+export async function createOAuthUser(
+  name: string,
+  provider: string,
+  providerId: string
+): Promise<number> {
+  await ready;
+  const filler = createHash("sha256")
+    .update(randomBytes(32))
+    .digest("hex");
+  const result = await db.execute({
+    sql: "INSERT INTO users (name, code_hash, provider, provider_id) VALUES (?, ?, ?, ?)",
+    args: [name, filler, provider, providerId],
+  });
+  return Number(result.lastInsertRowid);
+}
+
+// 기존 접속 코드 유저에 소셜 계정을 연결한다. 이미 다른 계정에 연결돼 있으면 false
+export async function linkProvider(
+  userId: number,
+  provider: string,
+  providerId: string
+): Promise<boolean> {
+  await ready;
+  try {
+    const result = await db.execute({
+      sql: "UPDATE users SET provider = ?, provider_id = ? WHERE id = ? AND provider_id IS NULL",
+      args: [provider, providerId, userId],
+    });
+    return result.rowsAffected === 1;
+  } catch {
+    return false; // 유니크 인덱스 충돌 = 그 카카오 계정이 이미 다른 유저에 연결됨
+  }
+}
+
+// --- invite codes ---
+
+export async function createInviteCode(
+  codeHash: string,
+  note: string | null
+): Promise<void> {
+  await ready;
+  await db.execute({
+    sql: "INSERT INTO invite_codes (code_hash, note) VALUES (?, ?)",
+    args: [codeHash, note],
+  });
+}
+
+// 미사용 코드만 원자적으로 소멸시킨다 — 성공하면 true (동시 사용 방지)
+export async function consumeInviteCode(
+  codeHash: string,
+  userId: number
+): Promise<boolean> {
+  await ready;
+  const result = await db.execute({
+    sql: "UPDATE invite_codes SET used_by = ?, used_at = datetime('now') WHERE code_hash = ? AND used_by IS NULL",
+    args: [userId, codeHash],
+  });
+  return result.rowsAffected === 1;
+}
+
+// 가입 전 검증용 — 코드가 존재하고 아직 미사용인지
+export async function isInviteCodeAvailable(codeHash: string): Promise<boolean> {
+  await ready;
+  const result = await db.execute({
+    sql: "SELECT 1 FROM invite_codes WHERE code_hash = ? AND used_by IS NULL",
+    args: [codeHash],
+  });
+  return result.rows.length === 1;
 }
 
 // --- messages ---
