@@ -122,6 +122,8 @@ export default function ChatView({
   const [model, setModel] = useState<ModelId>("haiku");
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  // 아바타 클릭 시 프로필 사진 풀스크린 뷰어
+  const [photoOpen, setPhotoOpen] = useState(false);
   const [viewportHeight, setViewportHeight] = useState<number>();
   // 카톡 모드에서 마지막 답장을 말풍선 단위로 순차 등장시키기 위한 카운터
   const [revealed, setRevealed] = useState(0);
@@ -467,7 +469,8 @@ export default function ChatView({
           ←
         </Link>
         <div
-          className={`flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${character.gradient} text-lg`}
+          onClick={() => character.avatar && setPhotoOpen(true)}
+          className={`flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${character.gradient} text-lg ${character.avatar ? "cursor-pointer" : ""}`}
         >
           {character.avatar ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -531,6 +534,29 @@ export default function ChatView({
           characterId={character.id}
           onClose={() => setProfileOpen(false)}
         />
+      )}
+      {photoOpen && character.avatar && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/95"
+          onClick={() => setPhotoOpen(false)}
+        >
+          <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 py-3 text-white/90">
+            <span className="text-sm font-medium">{character.name}</span>
+            <button
+              onClick={() => setPhotoOpen(false)}
+              aria-label="닫기"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-lg text-white/80 hover:bg-white/10"
+            >
+              ✕
+            </button>
+          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={character.avatar}
+            alt={character.name}
+            className="max-h-full max-w-full object-contain"
+          />
+        </div>
       )}
 
       <div
@@ -613,7 +639,8 @@ export default function ChatView({
               {divider}
               <div className="flex gap-2">
                 <div
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${character.gradient} text-sm`}
+                  onClick={() => character.avatar && setPhotoOpen(true)}
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${character.gradient} text-sm ${character.avatar ? "cursor-pointer" : ""}`}
                 >
                   {character.avatar ? (
                     // eslint-disable-next-line @next/next/no-img-element
