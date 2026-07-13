@@ -124,6 +124,36 @@ export default function ChatView({
   const [profileOpen, setProfileOpen] = useState(false);
   // 아바타 클릭 시 프로필 사진 풀스크린 뷰어
   const [photoOpen, setPhotoOpen] = useState(false);
+  // 내 메시지 꾹 누르면 복사 버튼 (copyTarget = 메시지 인덱스)
+  const [copyTarget, setCopyTarget] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const startPress = (i: number) => {
+    pressTimer.current = setTimeout(() => setCopyTarget(i), 500);
+  };
+  const cancelPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
+  const copyMessage = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // 구형 브라우저·비보안 컨텍스트 폴백
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    setCopyTarget(null);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
   const [viewportHeight, setViewportHeight] = useState<number>();
   // 카톡 모드에서 마지막 답장을 말풍선 단위로 순차 등장시키기 위한 카운터
   const [revealed, setRevealed] = useState(0);
@@ -535,6 +565,20 @@ export default function ChatView({
           onClose={() => setProfileOpen(false)}
         />
       )}
+      {copyTarget !== null && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setCopyTarget(null)}
+          onTouchStart={() => setCopyTarget(null)}
+        />
+      )}
+      {copied && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-28 z-[70] flex justify-center">
+          <span className="rounded-full bg-zinc-800/90 px-4 py-2 text-xs text-white shadow-lg">
+            복사했어요
+          </span>
+        </div>
+      )}
       {photoOpen && character.avatar && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/95"
@@ -601,8 +645,30 @@ export default function ChatView({
                       {time}
                     </span>
                   )}
-                  <div className="max-w-[80%] whitespace-pre-wrap rounded-3xl rounded-br-lg bg-gradient-to-br from-rose-400 to-pink-400 px-4 py-2.5 text-sm leading-relaxed text-white shadow-md shadow-rose-200/60">
+                  <div
+                    onTouchStart={() => startPress(i)}
+                    onTouchEnd={cancelPress}
+                    onTouchMove={cancelPress}
+                    onMouseDown={() => startPress(i)}
+                    onMouseUp={cancelPress}
+                    onMouseLeave={cancelPress}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      cancelPress();
+                      setCopyTarget(i);
+                    }}
+                    style={{ WebkitTouchCallout: "none" }}
+                    className="relative max-w-[80%] select-none whitespace-pre-wrap rounded-3xl rounded-br-lg bg-gradient-to-br from-rose-400 to-pink-400 px-4 py-2.5 text-sm leading-relaxed text-white shadow-md shadow-rose-200/60"
+                  >
                     {m.content}
+                    {copyTarget === i && (
+                      <button
+                        onClick={() => copyMessage(m.content)}
+                        className="absolute -top-10 right-0 z-50 whitespace-nowrap rounded-xl bg-zinc-800/95 px-3.5 py-2 text-xs font-medium text-white shadow-lg"
+                      >
+                        📋 복사
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
