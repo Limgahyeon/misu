@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getPushStatus, subscribeToPush } from "@/lib/push-client";
 import { stripTimeMeta } from "@/lib/text";
 import ProfileModal from "./ProfileModal";
 
@@ -164,6 +165,11 @@ export default function ChatView({
   const didInitialScroll = useRef(false);
   // 이번 세션에서 전송한 뒤 도착하는 답장에만 순차 등장을 적용
   const liveReveal = useRef(false);
+  // 알림 유도 배너 — 대화를 시작했는데 아직 알림을 안 켠 유저에게 한 번 권한다
+  const [pushNudge, setPushNudge] = useState<"push" | "ios" | null>(null);
+  const [nudgeMsg, setNudgeMsg] = useState<string | null>(null);
+  const [nudgeOk, setNudgeOk] = useState(false);
+  const nudgeChecked = useRef(false);
   // 과거 대화 로드 — 위로 스크롤하면 50개씩 더 불러온다
   const [hasMore, setHasMore] = useState(true);
   const loadingOlder = useRef(false);
@@ -281,6 +287,50 @@ export default function ChatView({
       /* 저장 공간 부족 등은 무시 */
     }
   }, [messages, loaded, sending, character]);
+
+  // 직접 메시지를 보내본 유저가 알림을 안 켰으면 배너를 띄운다 (기기당 1회, 닫으면 다시 안 뜸)
+  useEffect(() => {
+    if (nudgeChecked.current || !loaded || sending) return;
+    if (!messages.some((m) => m.role === "user")) return;
+    if (localStorage.getItem("misu-push-nudge") === "off") return;
+    nudgeChecked.current = true;
+    getPushStatus().then((status) => {
+      if (status === "off") setPushNudge("push");
+      else if (
+        status === "unsupported" &&
+        /iPhone|iPad/.test(navigator.userAgent)
+      ) {
+        setPushNudge("ios");
+      } else if (status === "on") {
+        // 이미 켜져 있음 — 다음부터 확인 자체를 건너뛴다
+        localStorage.setItem("misu-push-nudge", "off");
+      }
+    });
+  }, [loaded, sending, messages]);
+
+  const dismissNudge = () => {
+    localStorage.setItem("misu-push-nudge", "off");
+    setPushNudge(null);
+  };
+
+  const enableNudgePush = async () => {
+    setNudgeMsg(null);
+    const result = await subscribeToPush();
+    if (result === "ok") {
+      localStorage.setItem("misu-push-nudge", "off");
+      setNudgeOk(true);
+      setNudgeMsg("이제 그가 먼저 보낸 톡이 알림으로 와요 💌");
+      setTimeout(() => setPushNudge(null), 2500);
+    } else if (result === "denied") {
+      setNudgeMsg(
+        "알림이 차단돼 있어요. 휴대폰 설정에서 misu 알림을 허용한 뒤 다시 눌러주세요."
+      );
+    } else {
+      setNudgeMsg(
+        "등록에 실패했어요. iPhone은 Safari 공유 → '홈 화면에 추가'한 misu에서만 켤 수 있어요."
+      );
+    }
+  };
 
   useEffect(() => {
     if (!loaded) return;
@@ -792,6 +842,33 @@ export default function ChatView({
         <div ref={bottomRef} />
       </div>
 
+      {pushNudge && (
+        <div className="flex items-center gap-2 border-t border-rose-100/80 bg-rose-50/90 px-4 py-2 backdrop-blur-md">
+          <p className="min-w-0 flex-1 text-[11px] leading-snug text-zinc-600">
+            {nudgeMsg ??
+              (pushNudge === "ios"
+                ? "iPhone은 Safari 공유 → '홈 화면에 추가'하면 그가 먼저 보낸 톡을 알림으로 받을 수 있어요 💌"
+                : "그가 먼저 보낸 톡, 놓치지 않게 알림으로 받아볼래요?")}
+          </p>
+          {pushNudge === "push" && !nudgeOk && (
+            <button
+              type="button"
+              onClick={enableNudgePush}
+              className="shrink-0 rounded-xl bg-rose-400 px-3 py-1.5 text-xs font-medium text-white shadow-sm shadow-rose-200/60"
+            >
+              알림 켜기
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={dismissNudge}
+            aria-label="알림 권유 닫기"
+            className="shrink-0 px-1 text-sm text-zinc-400 hover:text-zinc-600"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <div className="flex items-center gap-2 border-t border-white/60 bg-white/60 px-4 pt-2.5 backdrop-blur-md">
         <span className="text-xs text-zinc-400">모델</span>
         <div className="flex gap-1 rounded-xl bg-rose-50/80 p-0.5">

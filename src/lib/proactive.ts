@@ -9,6 +9,7 @@ import {
   getRecentMessages,
   getSettings,
   getUpcomingAppointments,
+  hasAnyUserMessage,
   listAnniversaries,
   listUsers,
   markCelebrated,
@@ -428,6 +429,9 @@ async function maybeProactiveForUser(
   settings: Settings,
   force = false
 ): Promise<boolean> {
+  // 한 번도 직접 대화한 적 없는 계정(미사용 초대 계정 등)엔 선톡하지 않는다 — haiku 호출 낭비 방지
+  if (!force && !(await hasAnyUserMessage(userId))) return false;
+
   const partner = await currentPartner(userId, settings);
   if (!partner) return false;
 

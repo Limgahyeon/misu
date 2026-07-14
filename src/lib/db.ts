@@ -349,6 +349,16 @@ export async function getRecentMessages(
   return result.rows as unknown as Message[];
 }
 
+// 선톡 게이트용 — 이 유저가 직접 보낸 메시지가 하나라도 있는지
+export async function hasAnyUserMessage(userId: number): Promise<boolean> {
+  await ready;
+  const result = await db.execute({
+    sql: "SELECT 1 FROM messages WHERE user_id = ? AND role = 'user' LIMIT 1",
+    args: [userId],
+  });
+  return result.rows.length > 0;
+}
+
 // 과거 대화 페이지네이션 — 특정 메시지보다 오래된 것들을 최근순 limit개
 export async function getMessagesBefore(
   userId: number,

@@ -2,14 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { characters as presetCharacters } from "@/lib/characters";
-
-function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
-  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
-  const raw = atob((base64 + padding).replace(/-/g, "+").replace(/_/g, "/"));
-  const arr = new Uint8Array(new ArrayBuffer(raw.length));
-  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-  return arr;
-}
+import { getPushStatus, subscribeToPush } from "@/lib/push-client";
 
 // 내용 폼 — 모달(채팅방의 '이 채팅에서의 나')과 내 정보 탭(인라인) 양쪽에서 쓴다.
 // inline이면 취소 버튼이 없고, 저장해도 닫히지 않고 완료 메시지만 보여준다.
@@ -85,43 +78,21 @@ export function ProfileForm({
             ...presetCharacters.map((c) => ({ id: c.id, name: c.name })),
           ]);
         });
-      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-        setPushState("unsupported");
-      } else {
-        navigator.serviceWorker
-          .register("/sw.js")
-          .then((reg) => reg.pushManager.getSubscription())
-          .then((sub) => setPushState(sub ? "on" : "off"))
-          .catch(() => setPushState("off"));
-      }
+      getPushStatus().then(setPushState);
     }
   }, [characterId]);
 
   async function enablePush() {
     setPushMsg(null);
-    try {
-      const permission = await Notification.requestPermission();
-      if (permission !== "granted") {
-        setPushMsg(
-          "알림이 차단돼 있어요. 휴대폰 설정에서 misu(또는 브라우저)의 알림을 허용한 뒤 다시 눌러주세요."
-        );
-        return;
-      }
-      const reg = await navigator.serviceWorker.register("/sw.js");
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(
-          process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ""
-        ),
-      });
-      await fetch("/api/push", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(sub.toJSON()),
-      });
+    const result = await subscribeToPush();
+    if (result === "ok") {
       setPushState("on");
       setPushMsg("이제 그가 먼저 보낸 톡이 알림으로 와요 💌");
-    } catch {
+    } else if (result === "denied") {
+      setPushMsg(
+        "알림이 차단돼 있어요. 휴대폰 설정에서 misu(또는 브라우저)의 알림을 허용한 뒤 다시 눌러주세요."
+      );
+    } else {
       setPushState("off");
       setPushMsg(
         "알림 등록에 실패했어요. iPhone은 Safari 공유 → '홈 화면에 추가'로 설치한 misu에서만 켤 수 있어요."
