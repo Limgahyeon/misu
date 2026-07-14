@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   if (!characterId || !(await getCustomCharacter(userId, characterId))) {
     return Response.json({ error: "unknown character" }, { status: 404 });
   }
-  const snippets = await getSnippets(characterId);
+  const snippets = await getSnippets(userId, characterId);
   return Response.json({
     snippets: snippets.map((s) => ({ id: s.id, content: s.content })),
   });

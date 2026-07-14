@@ -118,15 +118,23 @@ export async function POST(request: NextRequest) {
   ) {
     try {
       const chunks = chunk(text);
-      const vectors = await embed(chunks);
+      // 임베딩이 실패해도 스니펫은 저장한다 — 검색 때 문자 유사도로 폴백됨
+      let vectors: number[][];
+      try {
+        vectors = await embed(chunks);
+      } catch (err) {
+        console.error("extract: embed failed, saving without vectors:", err);
+        vectors = chunks.map(() => []);
+      }
       await addSnippets(
+        userId,
         characterId,
-        chunks.map((content, i) => ({ content, embedding: vectors[i] }))
+        chunks.map((content, i) => ({ content, embedding: vectors[i] ?? [] }))
       );
       return Response.json({ examples: text, saved: chunks.length });
     } catch (err) {
-      // 임베딩이 실패해도 추출 결과는 살려서 돌려준다
-      console.error("extract: embed/save failed:", err);
+      // 저장이 실패해도 추출 결과는 살려서 돌려준다
+      console.error("extract: save failed:", err);
     }
   }
 

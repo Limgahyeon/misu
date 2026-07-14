@@ -47,6 +47,7 @@ const initSql = `
   );
   CREATE TABLE IF NOT EXISTS dialog_snippets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL DEFAULT 1,
     character_id TEXT NOT NULL,
     content TEXT NOT NULL,
     embedding TEXT NOT NULL,
@@ -158,6 +159,17 @@ async function init() {
   await db
     .execute(
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_provider ON users (provider, provider_id)"
+    )
+    .catch(() => {});
+  // 스니펫 유저 스코프 — 프리셋 캐릭터에 교정 스니펫이 쌓여도 유저 간에 섞이지 않게
+  await db
+    .execute(
+      "ALTER TABLE dialog_snippets ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1"
+    )
+    .catch(() => {});
+  await db
+    .execute(
+      "CREATE INDEX IF NOT EXISTS idx_snippets_user_character ON dialog_snippets (user_id, character_id)"
     )
     .catch(() => {});
   // 모든 메시지 조회가 (user_id, character_id)로 거른다 — user_id는 ALTER로 추가되는
@@ -622,43 +634,48 @@ const snippetCache = new Map<string, { snippets: Snippet[]; at: number }>();
 const SNIPPET_CACHE_TTL = 5 * 60 * 1000;
 
 export async function addSnippets(
+  userId: number,
   characterId: string,
   items: { content: string; embedding: number[] }[]
 ): Promise<void> {
   await ready;
   for (const it of items) {
     await db.execute({
-      sql: "INSERT INTO dialog_snippets (character_id, content, embedding) VALUES (?, ?, ?)",
-      args: [characterId, it.content, JSON.stringify(it.embedding)],
+      sql: "INSERT INTO dialog_snippets (user_id, character_id, content, embedding) VALUES (?, ?, ?, ?)",
+      args: [userId, characterId, it.content, JSON.stringify(it.embedding)],
     });
   }
-  snippetCache.delete(characterId);
+  snippetCache.delete(`${userId}:${characterId}`);
 }
 
-export async function getSnippets(characterId: string): Promise<Snippet[]> {
-  const hit = snippetCache.get(characterId);
+export async function getSnippets(
+  userId: number,
+  characterId: string
+): Promise<Snippet[]> {
+  const cacheKey = `${userId}:${characterId}`;
+  const hit = snippetCache.get(cacheKey);
   if (hit && Date.now() - hit.at < SNIPPET_CACHE_TTL) return hit.snippets;
   await ready;
   const result = await db.execute({
-    sql: "SELECT id, content, embedding FROM dialog_snippets WHERE character_id = ? ORDER BY id",
-    args: [characterId],
+    sql: "SELECT id, content, embedding FROM dialog_snippets WHERE user_id = ? AND character_id = ? ORDER BY id",
+    args: [userId, characterId],
   });
   const snippets = result.rows.map((row) => ({
     id: row.id as number,
     content: row.content as string,
     embedding: JSON.parse(row.embedding as string) as number[],
   }));
-  snippetCache.set(characterId, { snippets, at: Date.now() });
+  snippetCache.set(cacheKey, { snippets, at: Date.now() });
   return snippets;
 }
 
-// 본인 소유 캐릭터의 스니펫만 지울 수 있다
+// 본인 스니펫만 지울 수 있다 (user_id 도입 전 데이터는 캐릭터 소유로 판정)
 export async function deleteSnippet(userId: number, id: number): Promise<void> {
   await ready;
   await db.execute({
     sql: `DELETE FROM dialog_snippets WHERE id = ?
-      AND character_id IN (SELECT id FROM characters WHERE user_id = ?)`,
-    args: [id, userId],
+      AND (user_id = ? OR character_id IN (SELECT id FROM characters WHERE user_id = ?))`,
+    args: [id, userId, userId],
   });
   snippetCache.clear();
 }

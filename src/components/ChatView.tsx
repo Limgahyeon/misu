@@ -128,6 +128,10 @@ export default function ChatView({
   // 내 메시지 꾹 누르면 복사 버튼 (copyTarget = 메시지 인덱스)
   const [copyTarget, setCopyTarget] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  // "이렇게 말해줘" — 마지막 답장을 직접 교정하면 말투 예시로도 학습된다
+  const [correctOpen, setCorrectOpen] = useState(false);
+  const [correctText, setCorrectText] = useState("");
+  const [taught, setTaught] = useState(false);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const startPress = (i: number) => {
@@ -512,6 +516,41 @@ export default function ChatView({
     [messages, sending, character.id]
   );
 
+  // "이렇게 말해줘" 저장 — 마지막 답장을 교정문으로 교체하고 말투 예시로 학습
+  const submitCorrection = useCallback(async () => {
+    const text = correctText.trim();
+    const last = messages[messages.length - 1];
+    if (!text || sending || last?.role !== "assistant") return;
+    setSending(true);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId: character.id, correction: text }),
+      });
+      if (!res.ok) throw new Error("correction failed");
+      liveReveal.current = false;
+      setMessages((prev) => {
+        const next = [...prev];
+        const lastMsg = next[next.length - 1];
+        next[next.length - 1] = {
+          ...lastMsg,
+          content: text,
+          variants: [...(lastMsg.variants ?? [lastMsg.content]), text],
+        };
+        return next;
+      });
+      setCorrectOpen(false);
+      setCorrectText("");
+      setTaught(true);
+      setTimeout(() => setTaught(false), 2000);
+    } catch {
+      /* 입력을 유지해서 다시 시도할 수 있게 둔다 */
+    } finally {
+      setSending(false);
+    }
+  }, [correctText, messages, sending, character.id]);
+
   // 이번 세션에서 받는 답장만 말풍선 단위로 텀을 두고 등장시킨다
   const lastMsg = messages[messages.length - 1];
   useEffect(() => {
@@ -626,6 +665,13 @@ export default function ChatView({
         <div className="pointer-events-none fixed inset-x-0 bottom-28 z-[70] flex justify-center">
           <span className="rounded-full bg-zinc-800/90 px-4 py-2 text-xs text-white shadow-lg">
             복사했어요
+          </span>
+        </div>
+      )}
+      {taught && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-28 z-[70] flex justify-center">
+          <span className="rounded-full bg-zinc-800/90 px-4 py-2 text-xs text-white shadow-lg">
+            배웠어요 — 다음부터 이렇게 말할게요 ✏️
           </span>
         </div>
       )}
@@ -832,6 +878,42 @@ export default function ChatView({
                       >
                         ↻ 다른 답장 받기
                       </button>
+                      <button
+                        onClick={() => setCorrectOpen((v) => !v)}
+                        className="text-[11px] text-zinc-300 transition-colors hover:text-rose-400"
+                      >
+                        ✏️ 이렇게 말해줘
+                      </button>
+                    </div>
+                  )}
+                  {canReroll && correctOpen && (
+                    <div className="mt-1 flex flex-col gap-1.5 rounded-2xl border border-rose-100 bg-white/80 p-2.5">
+                      <textarea
+                        value={correctText}
+                        onChange={(e) => setCorrectText(e.target.value)}
+                        rows={3}
+                        maxLength={2000}
+                        placeholder={`그가 뭐라고 답했으면 좋겠어요?\n원하는 말투 그대로 써주면, 다음부터 이렇게 말하는 법을 배워요`}
+                        className="w-full resize-none rounded-xl border border-rose-100 bg-white px-3 py-2 text-sm text-zinc-700 outline-none placeholder:text-zinc-400 focus:border-rose-300"
+                      />
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => {
+                            setCorrectOpen(false);
+                            setCorrectText("");
+                          }}
+                          className="rounded-xl px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-600"
+                        >
+                          취소
+                        </button>
+                        <button
+                          onClick={submitCorrection}
+                          disabled={sending || !correctText.trim()}
+                          className="rounded-xl bg-rose-400 px-3 py-1.5 text-xs font-medium text-white shadow-sm shadow-rose-200/60 disabled:opacity-40"
+                        >
+                          이걸로 바꾸고 배우기
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

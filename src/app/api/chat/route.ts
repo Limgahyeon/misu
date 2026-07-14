@@ -4,6 +4,7 @@ import { after, NextRequest } from "next/server";
 import { getUserIdFromRequest } from "@/lib/auth";
 import {
   addMessage,
+  addSnippets,
   countUserMessagesSince,
   getEffectiveProfile,
   getMemory,
@@ -23,7 +24,7 @@ import {
   kstDayStartUtc,
   OWNER_USER_ID,
 } from "@/lib/limits";
-import { cosine, embed } from "@/lib/embedding";
+import { cosine, embed, lexicalOverlap } from "@/lib/embedding";
 import { updateMemoryIfNeeded } from "@/lib/memory";
 import { buildContextNote, buildSystemPrompt } from "@/lib/prompt";
 import { findCharacter } from "@/lib/resolve";
@@ -62,17 +63,30 @@ const CLAUDE_MODELS: Record<string, string> = {
 let geminiCooldownUntil = 0;
 const GEMINI_COOLDOWN_MS = 30 * 60 * 1000;
 
-// 지금 유저 메시지와 가장 비슷한 말투 예시 조각을 골라온다
+// 지금 유저 메시지와 가장 비슷한 말투 예시 조각을 골라온다.
+// 임베딩 API가 죽어 있으면(또는 임베딩 없이 저장된 스니펫이면) 문자 유사도로 폴백.
 async function retrieveExamples(
+  userId: number,
   characterId: string,
   query: string
 ): Promise<string | undefined> {
   try {
-    const snippets = await getSnippets(characterId);
+    const snippets = await getSnippets(userId, characterId);
     if (snippets.length === 0 || !query) return undefined;
-    const [qv] = await embed([query]);
+    let qv: number[] | undefined;
+    try {
+      [qv] = await embed([query]);
+    } catch {
+      qv = undefined;
+    }
     return snippets
-      .map((s) => ({ s, score: cosine(qv, s.embedding) }))
+      .map((s) => ({
+        s,
+        score:
+          qv && s.embedding.length > 0
+            ? cosine(qv, s.embedding)
+            : lexicalOverlap(query, s.content),
+      }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 4)
       .map((x) => x.s.content)
@@ -255,7 +269,7 @@ export async function POST(request: NextRequest) {
       getMemory(userId, character.id),
       getEffectiveProfile(userId, character.id),
       getWeather(lat, lon, city),
-      retrieveExamples(character.id, queryText),
+      retrieveExamples(userId, character.id, queryText),
       getUpcomingAppointments(userId, 7 * 24),
     ]);
   const schedule =
@@ -370,17 +384,72 @@ export async function POST(request: NextRequest) {
   });
 }
 
-// 리롤 버전 선택 — 마지막 답장의 variants 중 하나를 현재 버전으로 지정한다
+// 리롤 버전 선택(variantIdx) 또는 "이렇게 말해줘" 교정(correction)
+// 교정은 마지막 답장을 교정문으로 교체하고, (직전 유저 메시지, 교정문) 쌍을
+// 말투 스니펫으로 저장해 이후 비슷한 상황의 RAG 예시로 쓴다.
 export async function PATCH(request: NextRequest) {
   const userId = await getUserIdFromRequest(request);
   if (!userId) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
-  const { characterId, variantIdx } = await request.json();
+  const { characterId, variantIdx, correction } = await request.json();
   const character = characterId
     ? await findCharacter(userId, characterId)
     : undefined;
-  if (!character || !Number.isInteger(variantIdx)) {
+  if (!character) {
+    return Response.json({ error: "invalid request" }, { status: 400 });
+  }
+
+  if (typeof correction === "string") {
+    const text = stripTimeMeta(correction.trim()).slice(0, 2000);
+    if (!text) {
+      return Response.json({ error: "empty correction" }, { status: 400 });
+    }
+    const recent = await getRecentMessages(userId, character.id, 2);
+    const last = recent[recent.length - 1];
+    if (!last || last.role !== "assistant") {
+      return Response.json({ error: "no assistant message" }, { status: 400 });
+    }
+    const prevVariants: string[] = last.variants
+      ? JSON.parse(last.variants)
+      : [last.content];
+    await saveAssistantVariants(userId, character.id, last.id, text, [
+      ...prevVariants,
+      text,
+    ]);
+
+    // 스크린샷 추출과 같은 "나:/그:" 형식으로 저장 (나=유저, 그=캐릭터)
+    const prevUser = recent.length > 1 ? recent[0] : undefined;
+    const situation =
+      prevUser?.role === "user"
+        ? `나: ${stripTimeMeta(prevUser.content).replace(/\n+/g, " ").slice(0, 300)}\n`
+        : "";
+    const snippet =
+      situation +
+      text
+        .split("\n")
+        .filter((l) => l.trim())
+        .map((l) => `그: ${l}`)
+        .join("\n");
+    // 임베딩이 실패해도 스니펫은 저장한다 — 검색 때 문자 유사도로 폴백됨
+    let vector: number[] = [];
+    try {
+      [vector] = await embed([snippet]);
+    } catch (err) {
+      console.error("correction embed failed, saving without vector:", err);
+    }
+    try {
+      await addSnippets(userId, character.id, [
+        { content: snippet, embedding: vector },
+      ]);
+    } catch (err) {
+      // 스니펫 저장이 실패해도 답장 교체는 이미 됐으므로 성공으로 처리
+      console.error("correction snippet save failed:", err);
+    }
+    return Response.json({ ok: true });
+  }
+
+  if (!Number.isInteger(variantIdx)) {
     return Response.json({ error: "invalid request" }, { status: 400 });
   }
   const [last] = await getRecentMessages(userId, character.id, 1);

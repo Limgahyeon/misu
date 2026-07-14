@@ -47,5 +47,9 @@ misu-dev.db*
 # DB 백업 덤프 — 사적 대화가 담기므로 절대 커밋 금지
 /backups
 
+# 블라인드 테스트 결과·정답 — 대화 내용이 담기므로 커밋 금지
+scripts/blind-test-result.txt
+scripts/blind-test-key.txt
+
 .vercel
 .env*
